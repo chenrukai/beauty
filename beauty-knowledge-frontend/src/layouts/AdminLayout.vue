@@ -8,6 +8,7 @@
       <router-link to="/admin/category/tree">分类树</router-link>
       <router-link to="/admin/entity/confirm">实体确认</router-link>
       <router-link to="/admin/task/monitor">任务监控</router-link>
+      <router-link to="/admin/user/manage">用户管理</router-link>
     </aside>
 
     <main class="main">

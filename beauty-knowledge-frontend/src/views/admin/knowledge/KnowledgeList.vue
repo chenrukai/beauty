@@ -38,6 +38,9 @@
       <el-form-item>
         <el-button @click="reset">重置</el-button>
       </el-form-item>
+      <el-form-item>
+        <el-button type="success" @click="openCreate">新增知识</el-button>
+      </el-form-item>
     </el-form>
 
     <el-table :data="store.knowledgeList" stripe>
@@ -84,6 +87,67 @@
       <div class="content">{{ detail.content || '暂无正文' }}</div>
     </template>
   </el-drawer>
+
+  <el-dialog v-model="createVisible" title="新增知识" width="680px" destroy-on-close>
+    <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-width="88px">
+      <el-form-item label="标题" prop="title">
+        <el-input v-model="createForm.title" maxlength="120" show-word-limit placeholder="请输入标题" />
+      </el-form-item>
+
+      <el-form-item label="分类" prop="categoryId">
+        <el-select v-model="createForm.categoryId" filterable placeholder="请选择分类">
+          <el-option
+            v-for="item in flatCategories"
+            :key="item.id"
+            :label="item.label"
+            :value="item.id"
+          />
+        </el-select>
+      </el-form-item>
+
+      <el-form-item label="类型">
+        <el-select v-model="createForm.type" style="width: 180px">
+          <el-option label="TEXT" value="TEXT" />
+          <el-option label="PDF" value="PDF" />
+          <el-option label="IMAGE" value="IMAGE" />
+        </el-select>
+      </el-form-item>
+
+      <el-form-item label="状态">
+        <el-radio-group v-model="createForm.status">
+          <el-radio :label="1">已发布</el-radio>
+          <el-radio :label="0">草稿</el-radio>
+        </el-radio-group>
+      </el-form-item>
+
+      <el-form-item label="摘要">
+        <el-input
+          v-model="createForm.summary"
+          type="textarea"
+          :rows="2"
+          maxlength="300"
+          show-word-limit
+          placeholder="请输入摘要（可选）"
+        />
+      </el-form-item>
+
+      <el-form-item label="正文" prop="content">
+        <el-input
+          v-model="createForm.content"
+          type="textarea"
+          :rows="8"
+          maxlength="4000"
+          show-word-limit
+          placeholder="请输入正文内容"
+        />
+      </el-form-item>
+    </el-form>
+
+    <template #footer>
+      <el-button @click="createVisible = false">取消</el-button>
+      <el-button type="primary" :loading="creating" @click="submitCreate">保存</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
@@ -98,8 +162,25 @@ const pageNum = ref(1)
 const pageSize = ref(20)
 const drawerVisible = ref(false)
 const detail = ref<any>(null)
+const createVisible = ref(false)
+const creating = ref(false)
+const createFormRef = ref<any>(null)
+const createForm = ref({
+  title: '',
+  summary: '',
+  categoryId: undefined as number | undefined,
+  type: 'TEXT',
+  content: '',
+  status: 1
+})
+const createRules = {
+  title: [{ required: true, message: '请输入标题', trigger: 'blur' }],
+  categoryId: [{ required: true, message: '请选择分类', trigger: 'change' }],
+  content: [{ required: true, message: '请输入正文', trigger: 'blur' }]
+}
 
 onMounted(() => {
+  store.fetchCategoryTree()
   load(1)
 })
 
@@ -110,6 +191,20 @@ const publishedCount = computed(() =>
 const viewTotal = computed(() =>
   store.knowledgeList.reduce((sum: number, it: any) => sum + Number(it.viewCount || 0), 0)
 )
+
+const flatCategories = computed(() => {
+  const out: Array<{ id: number; label: string }> = []
+  const walk = (nodes: any[], depth = 0) => {
+    for (const n of nodes || []) {
+      out.push({ id: n.id, label: `${'  '.repeat(depth)}${n.name}` })
+      if (n.children?.length) {
+        walk(n.children, depth + 1)
+      }
+    }
+  }
+  walk(store.categoryTree || [])
+  return out
+})
 
 function buildParams(page: number) {
   const params: any = { pageNum: page, pageSize: pageSize.value }
@@ -139,6 +234,41 @@ async function openDetail(id: number) {
     drawerVisible.value = true
   } catch {
     ElMessage.error('加载详情失败')
+  }
+}
+
+function openCreate() {
+  createForm.value = {
+    title: '',
+    summary: '',
+    categoryId: flatCategories.value[0]?.id,
+    type: 'TEXT',
+    content: '',
+    status: 1
+  }
+  createVisible.value = true
+}
+
+async function submitCreate() {
+  const formEl = createFormRef.value
+  if (!formEl) return
+
+  try {
+    await formEl.validate()
+  } catch {
+    return
+  }
+
+  creating.value = true
+  try {
+    await store.createKnowledge(createForm.value)
+    ElMessage.success('新增成功')
+    createVisible.value = false
+    await load(1)
+  } catch (e: any) {
+    ElMessage.error(e?.message || '新增失败')
+  } finally {
+    creating.value = false
   }
 }
 </script>

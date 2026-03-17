@@ -41,6 +41,31 @@ public class DebugController {
         return Result.success(data);
     }
 
+    @GetMapping("/table-counts")
+    public Result<Map<String, Long>> tableCounts() {
+        String[] tables = {
+                "sys_user",
+                "kb_category",
+                "kb_knowledge",
+                "kb_file",
+                "kb_chunk",
+                "process_task",
+                "chat_session",
+                "chat_message",
+                "beauty_ingredient",
+                "beauty_effect",
+                "beauty_product",
+                "rel_ingredient_effect",
+                "rel_product_ingredient",
+                "entity_extract_pending"
+        };
+        Map<String, Long> data = new LinkedHashMap<>();
+        for (String table : tables) {
+            data.put(table, safeCount(table));
+        }
+        return Result.success(data);
+    }
+
     private Long safeCount(String table) {
         return safeQueryLong("SELECT COUNT(*) FROM " + table);
     }

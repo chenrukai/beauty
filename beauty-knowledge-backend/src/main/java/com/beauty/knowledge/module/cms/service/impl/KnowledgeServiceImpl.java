@@ -118,8 +118,26 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         long p = pageNum == null || pageNum < 1 ? 1 : pageNum;
         long s = pageSize == null || pageSize < 1 ? 10 : pageSize;
         long offset = (p - 1) * s;
+        if (!StringUtils.hasText(keyword)) {
+            KnowledgePageDTO dto = new KnowledgePageDTO();
+            dto.setPageNum(p);
+            dto.setPageSize(s);
+            dto.setStatus(1);
+            return page(dto);
+        }
+
         List<KbKnowledge> records = kbKnowledgeMapper.fullTextSearch(keyword, offset, s);
         long total = kbKnowledgeMapper.fullTextSearchCount(keyword);
+        if (total == 0) {
+            Page<KbKnowledge> fallbackPage = new Page<>(p, s);
+            LambdaQueryWrapper<KbKnowledge> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(KbKnowledge::getStatus, 1)
+                    .and(w -> w.like(KbKnowledge::getTitle, keyword).or().like(KbKnowledge::getContent, keyword))
+                    .orderByDesc(KbKnowledge::getId);
+            Page<KbKnowledge> pg = kbKnowledgeMapper.selectPage(fallbackPage, wrapper);
+            return PageResult.of(pg);
+        }
+
         long pages = (total + s - 1) / s;
         return PageResult.<KbKnowledge>builder()
                 .records(records)

@@ -61,10 +61,16 @@ public class KnowledgeProcessConsumer {
             }).toList();
             kbChunkMapper.insertBatch(entities);
 
-            List<String> texts = entities.stream().map(KbChunk::getContent).toList();
-            List<float[]> vectors = pythonAIClient.embed(texts);
-            List<Long> chunkIds = entities.stream().map(KbChunk::getId).toList();
-            milvusVectorStore.batchInsert(chunkIds, vectors, fileId, msg.getCategoryId(), texts);
+            // Degrade gracefully when embedding/vector services are unavailable.
+            // Chunks should still be persisted so downstream pages can work.
+            try {
+                List<String> texts = entities.stream().map(KbChunk::getContent).toList();
+                List<float[]> vectors = pythonAIClient.embed(texts);
+                List<Long> chunkIds = entities.stream().map(KbChunk::getId).toList();
+                milvusVectorStore.batchInsert(chunkIds, vectors, fileId, msg.getCategoryId(), texts);
+            } catch (Exception embedEx) {
+                log.warn("Embedding/vector unavailable, continue with bm25-only flow. fileId={}, reason={}", fileId, embedEx.getMessage());
+            }
 
             processTaskService.markSuccess(fileId);
             log.info("Process file success, fileId={}, chunks={}", fileId, entities.size());

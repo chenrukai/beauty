@@ -30,6 +30,10 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     return res.data
   }
 
+  async function createKnowledge(payload: any) {
+    await request.post('/knowledge', payload)
+  }
+
   async function pollTask(taskId: number) {
     const res = await request.get(`/file/task/${taskId}`)
     taskMap.value[taskId] = res.data
@@ -52,6 +56,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     fetchCategoryTree,
     fetchKnowledgePage,
     fetchKnowledgeDetail,
+    createKnowledge,
     pollTask,
     fetchRecentTasks
   }
