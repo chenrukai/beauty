@@ -27,7 +27,7 @@ public class FileController {
 
     private final FileService fileService;
 
-    @Operation(summary = "上传文件")
+    @Operation(summary = "上传文件并入队")
     @PreAuthorize("hasRole('admin')")
     @PostMapping("/upload")
     public Result<FileUploadVO> upload(@RequestParam("file") MultipartFile file,

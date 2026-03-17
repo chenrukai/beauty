@@ -35,12 +35,18 @@ public class SecurityBootstrapRunner implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
+        log.info("Security bootstrap -> disableDefaultSeedUsers={}, bootstrapAdminEnabled={}",
+                disableDefaultSeedUsers, bootstrapAdminEnabled);
         if (disableDefaultSeedUsers) {
             disableKnownSeedUsers();
             disableWeakDefaultAdmin();
+        } else {
+            log.warn("Security bootstrap -> default seed user auto-disable is OFF. Use only in trusted dev environments.");
         }
         if (bootstrapAdminEnabled) {
             bootstrapAdmin();
+        } else {
+            log.info("Security bootstrap -> bootstrap admin is disabled.");
         }
     }
 
@@ -61,6 +67,7 @@ public class SecurityBootstrapRunner implements CommandLineRunner {
             admin.setStatus(0);
             sysUserMapper.updateById(admin);
             log.warn("Security bootstrap -> default admin account was disabled (weak seeded password detected).");
+            log.warn("Security bootstrap -> if needed, enable beauty.bootstrap.admin.enabled=true and set BEAUTY_BOOTSTRAP_ADMIN_USERNAME/PASSWORD.");
         }
     }
 

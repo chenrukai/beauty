@@ -3,51 +3,51 @@
     <el-card shadow="never">
       <template #header>
         <div class="head">
-          <strong>User Management</strong>
-          <span>Admin only. All self-registered accounts are normal users.</span>
+          <strong>用户管理</strong>
+          <span>仅管理员可用。自主注册账号默认均为普通用户。</span>
         </div>
       </template>
 
       <div class="filters">
         <el-input
           v-model.trim="query.keyword"
-          placeholder="Username / Nickname"
+          placeholder="用户名 / 昵称"
           clearable
           class="item"
           @keyup.enter="onSearch"
         />
-        <el-select v-model="query.role" clearable placeholder="Role" class="item">
-          <el-option label="Admin" value="admin" />
-          <el-option label="User" value="user" />
+        <el-select v-model="query.role" clearable placeholder="角色" class="item">
+          <el-option label="管理员" value="admin" />
+          <el-option label="普通用户" value="user" />
         </el-select>
-        <el-select v-model="query.status" clearable placeholder="Status" class="item">
-          <el-option label="Enabled" :value="1" />
-          <el-option label="Disabled" :value="0" />
+        <el-select v-model="query.status" clearable placeholder="状态" class="item">
+          <el-option label="启用" :value="1" />
+          <el-option label="禁用" :value="0" />
         </el-select>
-        <el-button type="primary" @click="onSearch">Search</el-button>
-        <el-button @click="onReset">Reset</el-button>
+        <el-button type="primary" @click="onSearch">查询</el-button>
+        <el-button @click="onReset">重置</el-button>
       </div>
 
       <el-table v-loading="loading" :data="list" stripe>
         <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="username" label="Username" min-width="180" />
-        <el-table-column prop="nickname" label="Nickname" min-width="120" />
-        <el-table-column prop="role" label="Role" width="120">
+        <el-table-column prop="username" label="用户名" min-width="180" />
+        <el-table-column prop="nickname" label="昵称" min-width="120" />
+        <el-table-column prop="role" label="角色" width="120">
           <template #default="{ row }">
             <el-tag :type="row.role === 'admin' ? 'warning' : 'info'">
-              {{ row.role === 'admin' ? 'Admin' : 'User' }}
+              {{ row.role === 'admin' ? '管理员' : '普通用户' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="Status" width="120">
+        <el-table-column prop="status" label="状态" width="120">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'danger'">
-              {{ row.status === 1 ? 'Enabled' : 'Disabled' }}
+              {{ row.status === 1 ? '启用' : '禁用' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="createdAt" label="Created At" min-width="180" />
-        <el-table-column label="Action" width="140" fixed="right">
+        <el-table-column prop="createdAt" label="创建时间" min-width="180" />
+        <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
             <el-button
               v-if="row.status === 1"
@@ -55,7 +55,7 @@
               link
               @click="setStatus(row, 0)"
             >
-              Disable
+              禁用
             </el-button>
             <el-button
               v-else
@@ -63,7 +63,7 @@
               link
               @click="setStatus(row, 1)"
             >
-              Enable
+              启用
             </el-button>
           </template>
         </el-table-column>
@@ -134,7 +134,7 @@ async function fetchPage() {
     list.value = res.data?.records || []
     total.value = Number(res.data?.total || 0)
   } catch (e: any) {
-    ElMessage.error(e?.message || 'Failed to load users')
+    ElMessage.error(e?.message || '用户列表加载失败')
   } finally {
     loading.value = false
   }
@@ -160,18 +160,18 @@ function onSizeChange() {
 }
 
 async function setStatus(row: UserRow, status: 0 | 1) {
-  const action = status === 1 ? 'Enable' : 'Disable'
-  await ElMessageBox.confirm(`Confirm ${action.toLowerCase()} user "${row.username}"?`, 'Confirm', {
+  const action = status === 1 ? '启用' : '禁用'
+  await ElMessageBox.confirm(`确认${action}用户“${row.username}”吗？`, '操作确认', {
     type: 'warning',
     confirmButtonText: action,
-    cancelButtonText: 'Cancel'
+    cancelButtonText: '取消'
   })
   try {
     await request.put(`/admin/user/${row.id}/status`, null, { params: { status } })
-    ElMessage.success(`${action} success`)
+    ElMessage.success(`${action}成功`)
     await fetchPage()
   } catch (e: any) {
-    ElMessage.error(e?.message || `${action} failed`)
+    ElMessage.error(e?.message || `${action}失败`)
   }
 }
 </script>
