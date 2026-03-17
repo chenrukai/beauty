@@ -19,10 +19,16 @@ public class DbStartupProbe implements CommandLineRunner {
     @Value("${spring.datasource.url:}")
     private String datasourceUrl;
 
+    @Value("${beauty.db.auto-create-chat-tables:false}")
+    private boolean autoCreateChatTables;
+
     @Override
     public void run(String... args) {
         try {
-            ensureChatTables();
+            if (autoCreateChatTables) {
+                ensureChatTables();
+                log.warn("DB Probe -> auto chat table creation is enabled. This should be used in dev only.");
+            }
 
             Map<String, Object> info = jdbcTemplate.queryForMap(
                     "SELECT DATABASE() AS db, @@hostname AS host, @@port AS port, @@version AS version"

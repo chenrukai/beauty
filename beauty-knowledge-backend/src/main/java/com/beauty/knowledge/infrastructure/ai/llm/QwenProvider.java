@@ -60,7 +60,8 @@ public class QwenProvider implements LLMProvider {
 
     @Override
     public String chat(String systemPrompt, String userMessage) {
-        return chatAsync(systemPrompt, userMessage).onErrorReturn("").blockOptional().orElse("");
+        log.warn("Synchronous chat() is deprecated. Use chatAsync() to avoid blocking.");
+        return "";
     }
 
     @Override

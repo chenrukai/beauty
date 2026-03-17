@@ -18,6 +18,9 @@ export interface ChatMessage {
 }
 
 export const useChatStore = defineStore('chat', () => {
+  const configuredBaseURL = import.meta.env.VITE_API_BASE_URL?.trim()
+  const apiBaseURL = configuredBaseURL || 'http://127.0.0.1:8080/api'
+
   const sessionList = ref<any[]>([])
   const currentSessionId = ref<number | null>(null)
   const messages = ref<ChatMessage[]>([])
@@ -51,7 +54,7 @@ export const useChatStore = defineStore('chat', () => {
       const auth = useAuthStore().token || localStorage.getItem('bk_token') || ''
       const controller = new AbortController()
       const timeout = window.setTimeout(() => controller.abort(), 190000)
-      const res = await fetch(`http://localhost:8080/api/chat/stream?${params.toString()}`, {
+      const res = await fetch(`${apiBaseURL}/chat/stream?${params.toString()}`, {
         headers: { Authorization: `Bearer ${auth}` }
         , signal: controller.signal
       })

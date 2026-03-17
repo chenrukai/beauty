@@ -3,14 +3,13 @@ package com.beauty.knowledge.common.util;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.Date;
 
 @Slf4j
@@ -22,6 +21,16 @@ public class JwtUtil {
 
     @Value("${beauty.jwt.expire-in-seconds}")
     private long expireInSeconds;
+
+    @PostConstruct
+    public void validateConfig() {
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException("beauty.jwt.secret is empty. Set BEAUTY_JWT_SECRET before starting application.");
+        }
+        if (secret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException("beauty.jwt.secret must be at least 32 bytes.");
+        }
+    }
 
     public String generateToken(Long userId, String role) {
         Date now = new Date();
@@ -66,16 +75,6 @@ public class JwtUtil {
     }
 
     private SecretKey secretKey() {
-        try {
-            byte[] bytes = secret.getBytes(StandardCharsets.UTF_8);
-            if (bytes.length < 32) {
-                // HS256 requires a key length of at least 256 bits.
-                log.warn("JWT secret length is less than 256-bit, auto-deriving a secure key via SHA-256.");
-                bytes = MessageDigest.getInstance("SHA-256").digest(bytes);
-            }
-            return Keys.hmacShaKeyFor(bytes);
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("Failed to initialize JWT secret key", ex);
-        }
+        return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 }

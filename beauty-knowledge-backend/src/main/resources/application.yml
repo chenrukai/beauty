@@ -15,7 +15,7 @@ mybatis-plus:
 
 beauty:
   jwt:
-    secret: ${BEAUTY_JWT_SECRET:please-change-in-env-32-chars-min}
+    secret: ${BEAUTY_JWT_SECRET:}
     expire-in-seconds: 86400
   llm:
     provider: ollama

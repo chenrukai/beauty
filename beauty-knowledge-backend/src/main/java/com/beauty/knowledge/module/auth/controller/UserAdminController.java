@@ -63,6 +63,14 @@ public class UserAdminController {
         if (user == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "user not found");
         }
+        if ("admin".equalsIgnoreCase(user.getRole()) && status == 0) {
+            Long enabledAdminCount = sysUserMapper.selectCount(new LambdaQueryWrapper<SysUser>()
+                    .eq(SysUser::getRole, "admin")
+                    .eq(SysUser::getStatus, 1));
+            if (enabledAdminCount != null && enabledAdminCount <= 1) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "cannot disable the last enabled admin");
+            }
+        }
         user.setStatus(status);
         sysUserMapper.updateById(user);
         return Result.success();

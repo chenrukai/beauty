@@ -12,20 +12,7 @@ USE beauty_knowledge;
 -- ------------------------------------------------------------
 -- 清理旧表（按依赖逆序）
 -- ------------------------------------------------------------
-DROP TABLE IF EXISTS entity_extract_pending;
-DROP TABLE IF EXISTS rel_product_ingredient;
-DROP TABLE IF EXISTS rel_ingredient_effect;
-DROP TABLE IF EXISTS beauty_product;
-DROP TABLE IF EXISTS beauty_effect;
-DROP TABLE IF EXISTS beauty_ingredient;
-DROP TABLE IF EXISTS chat_message;
-DROP TABLE IF EXISTS chat_session;
-DROP TABLE IF EXISTS process_task;
-DROP TABLE IF EXISTS kb_chunk;
-DROP TABLE IF EXISTS kb_file;
-DROP TABLE IF EXISTS kb_knowledge;
-DROP TABLE IF EXISTS kb_category;
-DROP TABLE IF EXISTS sys_user;
+-- DROP TABLE statements removed intentionally to avoid destructive initialization.
 
 -- ============================================================
 -- 1) 用户表

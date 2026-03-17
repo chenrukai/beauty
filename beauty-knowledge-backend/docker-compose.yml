@@ -6,15 +6,15 @@ services:
     restart: unless-stopped
     command: --ngram_token_size=2
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: beauty_knowledge
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-beauty_knowledge}
     ports:
-      - "3306:3306"
+      - "${MYSQL_PORT:-3306}:3306"
     volumes:
       - beauty-mysql-data:/var/lib/mysql
       - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-proot" ]
+      test: [ "CMD-SHELL", "mysqladmin ping -h localhost -p$${MYSQL_ROOT_PASSWORD}" ]
       interval: 15s
       timeout: 10s
       retries: 10
@@ -27,7 +27,7 @@ services:
     container_name: beauty-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - beauty-redis-data:/data
     command: ["redis-server", "--appendonly", "yes"]
@@ -45,11 +45,11 @@ services:
     container_name: beauty-rabbitmq
     restart: unless-stopped
     environment:
-      RABBITMQ_DEFAULT_USER: beauty
-      RABBITMQ_DEFAULT_PASS: beauty123
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-beauty}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
     volumes:
       - beauty-rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
@@ -67,11 +67,11 @@ services:
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: beauty
-      MINIO_ROOT_PASSWORD: beauty123456
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-beauty}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - beauty-minio-data:/data
     healthcheck:
@@ -118,7 +118,7 @@ services:
       ETCD_ENDPOINTS: etcd:2379
       MINIO_ADDRESS: minio:9000
     ports:
-      - "19530:19530"
+      - "${MILVUS_PORT:-19530}:19530"
     volumes:
       - beauty-milvus-data:/var/lib/milvus
     healthcheck:
