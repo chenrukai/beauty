@@ -1,0 +1,350 @@
+<template>
+  <div class="login-page">
+    <section class="hero-panel">
+      <div class="hero-copy">
+        <p class="eyebrow">Beauty Knowledge Console</p>
+        <h1>把门店知识、产品理解和用户问答放进一个更顺手的工作台。</h1>
+        <p class="intro">
+          面向真实用户的登录入口，应该清楚、克制，也要让人愿意继续用下去。
+          这里保留管理员与普通用户两种流转，但注册入口只开放普通用户。
+        </p>
+      </div>
+
+      <div class="hero-metrics">
+        <div class="metric-card">
+          <span class="metric-label">适用场景</span>
+          <strong>门店咨询 / 培训 / 知识问答</strong>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">当前账号策略</span>
+          <strong>仅注册普通用户</strong>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">推荐体验</span>
+          <strong>先登录，再进入用户问答台</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="auth-panel">
+      <div class="panel-head">
+        <p class="panel-kicker">{{ isRegister ? '创建普通用户账号' : '欢迎回来' }}</p>
+        <h2>{{ isRegister ? '注册后即可登录使用' : '登录 AI 美业知识台' }}</h2>
+        <p class="panel-note">
+          {{ isRegister ? '注册不会创建管理员权限，也不需要填写昵称。' : '请使用你的业务账号登录。' }}
+        </p>
+      </div>
+
+      <el-form @submit.prevent class="auth-form">
+        <el-form-item>
+          <el-input
+            v-model.trim="form.username"
+            placeholder="用户名（3-32 位）"
+            size="large"
+            autocomplete="username"
+          />
+        </el-form-item>
+
+        <el-form-item>
+          <el-input
+            v-model="form.password"
+            type="password"
+            placeholder="密码（6-64 位）"
+            size="large"
+            autocomplete="current-password"
+            show-password
+            @keyup.enter="submitPrimary"
+          />
+        </el-form-item>
+
+        <el-form-item v-if="isRegister">
+          <el-input
+            v-model="form.confirmPassword"
+            type="password"
+            placeholder="确认密码"
+            size="large"
+            autocomplete="new-password"
+            show-password
+            @keyup.enter="submitPrimary"
+          />
+        </el-form-item>
+
+        <el-button type="primary" class="primary-btn" :loading="loading" @click="submitPrimary">
+          {{ isRegister ? '注册普通用户' : '登录系统' }}
+        </el-button>
+      </el-form>
+
+      <div class="switch-row">
+        <span>{{ isRegister ? '已经有账号了？' : '还没有账号？' }}</span>
+        <button class="mode-switch" type="button" @click="toggleMode">
+          {{ isRegister ? '返回登录' : '点击注册' }}
+        </button>
+      </div>
+    </section>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { useAuthStore } from '../stores/auth'
+
+const auth = useAuthStore()
+const router = useRouter()
+const loading = ref(false)
+const mode = ref<'login' | 'register'>('login')
+
+const form = reactive({
+  username: '',
+  password: '',
+  confirmPassword: ''
+})
+
+const isRegister = computed(() => mode.value === 'register')
+
+function resetRegisterFields() {
+  form.password = ''
+  form.confirmPassword = ''
+}
+
+function toggleMode() {
+  mode.value = isRegister.value ? 'login' : 'register'
+  resetRegisterFields()
+}
+
+async function onLogin() {
+  loading.value = true
+  try {
+    await auth.login(form.username, form.password)
+    const role = String(auth.userInfo?.role || '').toLowerCase()
+    await router.push(role === 'admin' ? '/admin' : '/user/chat')
+  } catch (e: any) {
+    ElMessage.error(e?.message || '登录失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function onRegister() {
+  if (form.password !== form.confirmPassword) {
+    ElMessage.warning('两次输入的密码不一致')
+    return
+  }
+
+  loading.value = true
+  try {
+    await auth.register(form.username, form.password)
+    ElMessage.success('注册成功，请登录')
+    mode.value = 'login'
+    form.password = ''
+    form.confirmPassword = ''
+  } catch (e: any) {
+    ElMessage.error(e?.message || '注册失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function submitPrimary() {
+  if (isRegister.value) {
+    await onRegister()
+    return
+  }
+  await onLogin()
+}
+</script>
+
+<style scoped>
+.login-page {
+  min-height: 100vh;
+  padding: 32px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(360px, 480px);
+  gap: 28px;
+  align-items: stretch;
+}
+
+.hero-panel,
+.auth-panel {
+  position: relative;
+  overflow: hidden;
+  border-radius: 28px;
+  border: 1px solid rgba(26, 70, 62, 0.08);
+  box-shadow: 0 30px 80px rgba(28, 44, 42, 0.08);
+}
+
+.hero-panel {
+  padding: 48px;
+  display: grid;
+  align-content: space-between;
+  background:
+    radial-gradient(circle at top left, rgba(255, 247, 223, 0.9), transparent 32%),
+    linear-gradient(135deg, #0f766e 0%, #17594f 48%, #f4ede0 48%, #f9f5ec 100%);
+  color: #fcfaf3;
+}
+
+.hero-panel::after {
+  content: '';
+  position: absolute;
+  inset: auto -60px -80px auto;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  background: rgba(255, 244, 214, 0.28);
+  filter: blur(4px);
+}
+
+.hero-copy {
+  max-width: 620px;
+  position: relative;
+  z-index: 1;
+}
+
+.eyebrow,
+.panel-kicker,
+.metric-label {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.eyebrow {
+  color: rgba(255, 247, 223, 0.84);
+}
+
+h1 {
+  margin: 18px 0 16px;
+  font-size: clamp(34px, 4.4vw, 58px);
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+}
+
+.intro {
+  margin: 0;
+  max-width: 520px;
+  font-size: 17px;
+  line-height: 1.8;
+  color: rgba(252, 250, 243, 0.88);
+}
+
+.hero-metrics {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.metric-card {
+  padding: 18px;
+  border-radius: 20px;
+  background: rgba(255, 251, 240, 0.12);
+  border: 1px solid rgba(255, 251, 240, 0.18);
+  backdrop-filter: blur(10px);
+}
+
+.metric-card strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.metric-label {
+  color: rgba(255, 247, 223, 0.76);
+}
+
+.auth-panel {
+  padding: 36px;
+  align-self: center;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 243, 232, 0.96)),
+    #fff;
+}
+
+.panel-head h2 {
+  margin: 10px 0 8px;
+  font-size: 30px;
+  line-height: 1.15;
+  color: #173f39;
+}
+
+.panel-kicker {
+  color: #8b5e34;
+}
+
+.panel-note {
+  margin: 0;
+  color: #5f6c69;
+  line-height: 1.7;
+}
+
+.auth-form {
+  margin-top: 28px;
+}
+
+.auth-form :deep(.el-input__wrapper) {
+  min-height: 50px;
+  border-radius: 16px;
+  box-shadow: 0 0 0 1px rgba(18, 75, 67, 0.08) inset;
+}
+
+.primary-btn {
+  width: 100%;
+  min-height: 50px;
+  margin-top: 6px;
+  border: none;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #0f766e, #1f9a8f);
+  box-shadow: 0 16px 32px rgba(15, 118, 110, 0.24);
+}
+
+.primary-btn:hover {
+  background: linear-gradient(135deg, #116d66, #22897f);
+}
+
+.switch-row {
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #5f6c69;
+}
+
+.mode-switch {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #0f766e;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+@media (max-width: 980px) {
+  .login-page {
+    grid-template-columns: 1fr;
+    padding: 18px;
+  }
+
+  .hero-panel,
+  .auth-panel {
+    border-radius: 24px;
+  }
+
+  .hero-panel {
+    padding: 32px 24px;
+  }
+
+  .hero-metrics {
+    grid-template-columns: 1fr;
+    margin-top: 28px;
+  }
+
+  .auth-panel {
+    padding: 28px 22px;
+  }
+}
+</style>

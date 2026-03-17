@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.beauty.knowledge.module.cms.mapper.KbKnowledgeMapper">
+
+    <select id="fullTextSearch" resultType="com.beauty.knowledge.module.cms.domain.entity.KbKnowledge">
+        SELECT id, title, summary, content, category_id, type, cover_url, status, view_count, author_id, created_at, updated_at,
+               MATCH(title, content) AGAINST(#{keyword} IN BOOLEAN MODE) AS score
+        FROM kb_knowledge
+        WHERE MATCH(title, content) AGAINST(#{keyword} IN BOOLEAN MODE)
+          AND status = 1
+        ORDER BY score DESC, id DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="fullTextSearchCount" resultType="long">
+        SELECT COUNT(1)
+        FROM kb_knowledge
+        WHERE MATCH(title, content) AGAINST(#{keyword} IN BOOLEAN MODE)
+          AND status = 1
+    </select>
+</mapper>
