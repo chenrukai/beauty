@@ -4,6 +4,8 @@ import LoginPage from '../views/LoginPage.vue'
 import AdminLayout from '../layouts/AdminLayout.vue'
 import UserLayout from '../layouts/UserLayout.vue'
 import ChatPage from '../views/user/Chat.vue'
+import UserHomePage from '../views/user/Home.vue'
+import UserFavoritesPage from '../views/user/Favorites.vue'
 import AdminOverviewPage from '../views/admin/Overview.vue'
 import FileUploadPage from '../views/admin/knowledge/FileUpload.vue'
 import KnowledgeListPage from '../views/admin/knowledge/KnowledgeList.vue'
@@ -38,8 +40,10 @@ const routes: RouteRecordRaw[] = [
     component: UserLayout,
     meta: { requiresAuth: true, role: 'user' },
     children: [
+      { path: 'home', component: UserHomePage },
       { path: 'chat', component: ChatPage },
-      { path: '', redirect: '/user/chat' }
+      { path: 'favorites', component: UserFavoritesPage },
+      { path: '', redirect: '/user/home' }
     ]
   },
   { path: '/', redirect: '/login' }
@@ -60,7 +64,7 @@ router.beforeEach((to) => {
   }
   const role = String(auth.userInfo?.role || '').toLowerCase()
   if (to.meta.role && role !== String(to.meta.role)) {
-    return role === 'admin' ? '/admin' : '/user/chat'
+    return role === 'admin' ? '/admin' : '/user/home'
   }
   return true
 })

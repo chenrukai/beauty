@@ -2,14 +2,20 @@
   <div class="user-shell">
     <header class="topbar">
       <div class="brand">
-        <span class="brand-badge">Beauty Desk</span>
+        <span class="brand-badge">用户端</span>
         <div>
           <strong>AI 美业知识台</strong>
-          <p>面向咨询、学习和日常接待的用户工作区</p>
+          <p>面向咨询、学习和日常接待的用户工作区。</p>
         </div>
       </div>
 
       <div class="actions">
+        <nav class="main-nav">
+          <router-link to="/user/home">首页</router-link>
+          <router-link to="/user/chat">问答助手</router-link>
+          <router-link to="/user/favorites">我的收藏</router-link>
+        </nav>
+
         <div class="user-pill">
           <span class="label">当前账号</span>
           <strong>{{ auth.userInfo?.username || '未登录' }}</strong>
@@ -54,7 +60,7 @@ async function onLogout() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
+  gap: 14px;
   padding: 20px 24px;
   background: rgba(15, 118, 110, 0.94);
   color: #fff;
@@ -84,14 +90,37 @@ async function onLogout() {
   background: rgba(255, 248, 223, 0.16);
   border: 1px solid rgba(255, 248, 223, 0.24);
   font-size: 12px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+}
+
+.main-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.main-nav a {
+  color: #d7f9ef;
+  text-decoration: none;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  transition: 0.2s ease;
+}
+
+.main-nav a:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.main-nav a.router-link-active {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
 }
 
 .user-pill {
@@ -118,14 +147,15 @@ async function onLogout() {
 
 @media (max-width: 900px) {
   .topbar {
-    padding: 18px;
     flex-direction: column;
     align-items: flex-start;
+    padding: 16px;
   }
 
   .actions {
     width: 100%;
-    justify-content: space-between;
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
   .shell-body {

@@ -1,0 +1,230 @@
+<template>
+  <div class="favorites-page">
+    <el-card shadow="never">
+      <template #header>
+        <div class="head">
+          <strong>我的收藏</strong>
+          <span class="muted">支持搜索与分页，收藏多了也好找。</span>
+        </div>
+      </template>
+
+      <div class="toolbar">
+        <el-input
+          v-model="keyword"
+          clearable
+          placeholder="搜索收藏标题"
+          @keyup.enter="fetchFavorites(1)"
+          @change="fetchFavorites(1)"
+        />
+        <el-button type="primary" @click="fetchFavorites(1)">搜索</el-button>
+        <el-button @click="resetKeyword">重置</el-button>
+      </div>
+
+      <div v-if="loading" class="muted">加载中...</div>
+      <div v-else-if="list.length" class="list">
+        <div v-for="item in list" :key="item.knowledgeId" class="item">
+          <div class="meta">
+            <h4>{{ item.title }}</h4>
+            <p>类型：{{ item.type || '-' }} ｜ 浏览：{{ item.viewCount || 0 }}</p>
+          </div>
+          <div class="actions">
+            <el-button size="small" type="info" plain @click="openKnowledge(Number(item.knowledgeId))">查看</el-button>
+            <el-button size="small" type="danger" plain @click="removeFavorite(Number(item.knowledgeId))">
+              取消收藏
+            </el-button>
+            <el-button size="small" @click="goChat(item.title)">继续提问</el-button>
+          </div>
+        </div>
+      </div>
+      <el-empty v-else description="暂无收藏内容" :image-size="80" />
+
+      <div class="pager" v-if="total > pageSize">
+        <el-pagination
+          background
+          layout="total, prev, pager, next"
+          :total="total"
+          :page-size="pageSize"
+          v-model:current-page="pageNum"
+          @current-change="fetchFavorites"
+        />
+      </div>
+    </el-card>
+  </div>
+
+  <el-dialog v-model="knowledgeDialogVisible" title="知识详情" width="760px" destroy-on-close>
+    <template v-if="knowledgeDetail">
+      <h3 style="margin-top: 0">{{ knowledgeDetail.title }}</h3>
+      <p class="dialog-summary">{{ knowledgeDetail.summary || '暂无摘要' }}</p>
+      <div class="dialog-content">{{ knowledgeDetail.content || '暂无正文' }}</div>
+    </template>
+  </el-dialog>
+</template>
+
+<script setup lang="ts">
+import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import request from '../../api/request'
+
+const router = useRouter()
+const list = ref<any[]>([])
+const loading = ref(false)
+const keyword = ref('')
+const pageNum = ref(1)
+const pageSize = 8
+const total = ref(0)
+const knowledgeDialogVisible = ref(false)
+const knowledgeDetail = ref<any>(null)
+
+onMounted(async () => {
+  await fetchFavorites(1)
+})
+
+function goChat(title: string) {
+  router.push({ path: '/user/chat', query: { q: `请结合实操解释：${title}` } })
+}
+
+async function fetchFavorites(page = pageNum.value) {
+  pageNum.value = Number(page || 1)
+  loading.value = true
+  try {
+    const res = await request.get('/user/favorite/page', {
+      params: {
+        pageNum: pageNum.value,
+        pageSize,
+        keyword: keyword.value || undefined
+      }
+    })
+    list.value = res.data?.records || []
+    total.value = Number(res.data?.total || 0)
+  } catch {
+    list.value = []
+    total.value = 0
+  } finally {
+    loading.value = false
+  }
+}
+
+async function removeFavorite(knowledgeId: number) {
+  try {
+    await request.delete(`/user/favorite/${knowledgeId}`)
+    ElMessage.success('已取消收藏')
+    await fetchFavorites(pageNum.value)
+  } catch (e: any) {
+    ElMessage.error(e?.message || '取消收藏失败')
+  }
+}
+
+function resetKeyword() {
+  keyword.value = ''
+  fetchFavorites(1)
+}
+
+async function openKnowledge(knowledgeId: number) {
+  try {
+    const res = await request.get(`/knowledge/${knowledgeId}`)
+    const data = res.data || {}
+    knowledgeDetail.value = data.knowledge || null
+    knowledgeDialogVisible.value = true
+    await recordAction('browse', { targetType: 'knowledge', targetId: knowledgeId, source: 'favorite' })
+    await fetchFavorites(pageNum.value)
+  } catch (e: any) {
+    ElMessage.error(e?.message || '加载知识详情失败')
+  }
+}
+
+async function recordAction(actionType: string, payload: any = {}) {
+  try {
+    await request.post('/user/action', {
+      actionType,
+      ...payload
+    })
+  } catch {
+    // 不影响主流程
+  }
+}
+</script>
+
+<style scoped>
+.favorites-page {
+  display: grid;
+  gap: 12px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.toolbar {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.list {
+  display: grid;
+  gap: 10px;
+}
+
+.item {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.meta h4 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.meta p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.pager {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.muted {
+  color: #64748b;
+}
+
+.dialog-summary {
+  color: #64748b;
+  margin-bottom: 10px;
+}
+
+.dialog-content {
+  white-space: pre-wrap;
+  line-height: 1.8;
+  color: #334155;
+}
+
+@media (max-width: 900px) {
+  .toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+</style>
