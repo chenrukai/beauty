@@ -35,7 +35,7 @@ public class UserActionServiceImpl implements UserActionService {
         if (!StringUtils.hasText(extra) && StringUtils.hasText(dto.getSource())) {
             extra = dto.getSource().trim().toLowerCase();
         }
-        log.setExtra(extra);
+        log.setExtra(toJsonScalar(extra));
         log.setIp(ip);
         log.setUserAgent(userAgent);
         userActionLogMapper.insert(log);
@@ -54,5 +54,24 @@ public class UserActionServiceImpl implements UserActionService {
 
     private String normalize(String actionType) {
         return actionType == null ? "" : actionType.trim().toLowerCase();
+    }
+
+    /**
+     * Keep `extra` compatible with JSON column:
+     * - plain values such as "recommend" become JSON strings: "\"recommend\""
+     * - already-json payloads pass through unchanged.
+     */
+    private String toJsonScalar(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        String v = value.trim();
+        if (v.startsWith("{") || v.startsWith("[") || v.startsWith("\"")) {
+            return v;
+        }
+        if ("true".equalsIgnoreCase(v) || "false".equalsIgnoreCase(v) || "null".equalsIgnoreCase(v)) {
+            return v.toLowerCase();
+        }
+        return "\"" + v.toLowerCase() + "\"";
     }
 }

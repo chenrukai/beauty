@@ -13,13 +13,13 @@ import java.util.Map;
 public interface DashboardReportMapper {
 
     @Select("""
-            SELECT LOWER(COALESCE(extra, 'unknown')) AS source, COUNT(1) AS cnt
+            SELECT LOWER(TRIM(BOTH '"' FROM COALESCE(CAST(extra AS CHAR), 'unknown'))) AS source, COUNT(1) AS cnt
             FROM user_action_log
             WHERE action_type = 'browse'
               AND target_type = 'knowledge'
               AND created_at >= #{start}
               AND created_at < #{end}
-            GROUP BY LOWER(COALESCE(extra, 'unknown'))
+            GROUP BY LOWER(TRIM(BOTH '"' FROM COALESCE(CAST(extra AS CHAR), 'unknown')))
             """)
     List<Map<String, Object>> sourceRatio(@Param("start") LocalDateTime start,
                                           @Param("end") LocalDateTime end);

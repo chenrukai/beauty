@@ -1,11 +1,9 @@
 <template>
-  <div class="stream-text">{{ text }}</div>
+  <LinkifiedText :text="text" />
 </template>
 
 <script setup lang="ts">
+import LinkifiedText from '../common/LinkifiedText.vue'
+
 defineProps<{ text: string }>()
 </script>
-
-<style scoped>
-.stream-text { white-space: pre-wrap; line-height: 1.7; }
-</style>

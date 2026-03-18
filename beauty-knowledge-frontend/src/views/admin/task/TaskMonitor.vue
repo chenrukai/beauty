@@ -30,16 +30,16 @@
 
     <el-alert
       v-if="store.recentTasks.length === 0"
-      title="暂无任务数据。执行上传并入队后会生成处理任务。"
+      title="暂无任务数据。执行上传并入队后，会生成处理任务。"
       type="info"
       :closable="false"
       style="margin-bottom: 12px"
     />
 
-    <el-table :data="store.recentTasks" stripe>
-      <el-table-column prop="fileName" label="文件名" min-width="200" show-overflow-tooltip />
-      <el-table-column prop="knowledgeTitle" label="所属知识" min-width="200" show-overflow-tooltip />
-      <el-table-column label="类型" width="150">
+    <el-table :data="pagedTasks" stripe>
+      <el-table-column prop="fileName" label="文件名" min-width="220" show-overflow-tooltip />
+      <el-table-column prop="knowledgeTitle" label="所属知识" min-width="220" show-overflow-tooltip />
+      <el-table-column label="类型" width="130">
         <template #default="{ row }">
           {{ taskTypeText(row.taskType) }}
         </template>
@@ -49,25 +49,38 @@
           <el-tag :type="taskStatusType(row.status)">{{ taskStatusText(row.status) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="进度" width="160">
+      <el-table-column label="进度" width="170">
         <template #default="{ row }">
           <el-progress :percentage="toPercent(row.progress)" :stroke-width="8" />
         </template>
       </el-table-column>
       <el-table-column prop="resultMsg" label="结果信息" min-width="220" show-overflow-tooltip />
       <el-table-column prop="updatedAt" label="更新时间" min-width="170" />
-      <el-table-column label="操作" width="150" fixed="right">
+      <el-table-column label="操作" width="160" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="pickTask(row.id)">查看</el-button>
           <el-button v-if="canRetry(row.status)" link type="warning" @click="retryTask(row.id)">重试</el-button>
         </template>
       </el-table-column>
     </el-table>
+
+    <div class="pager" v-if="store.recentTasks.length > 0">
+      <el-pagination
+        background
+        layout="total, sizes, prev, pager, next"
+        :total="store.recentTasks.length"
+        :current-page="pageNum"
+        :page-size="pageSize"
+        :page-sizes="[10, 20, 30, 50]"
+        @current-change="onPageChange"
+        @size-change="onSizeChange"
+      />
+    </div>
   </el-card>
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import request from '../../../api/request'
 import { useKnowledgeStore } from '../../../stores/knowledge'
@@ -76,7 +89,15 @@ const store = useKnowledgeStore()
 const selectedTaskId = ref<number | null>(null)
 const task = ref<any>(null)
 const autoRefreshing = ref(false)
+const pageNum = ref(1)
+const pageSize = ref(10)
+const recentFetchSize = 200
 let timer: ReturnType<typeof setInterval> | null = null
+
+const pagedTasks = computed(() => {
+  const start = (pageNum.value - 1) * pageSize.value
+  return store.recentTasks.slice(start, start + pageSize.value)
+})
 
 onMounted(() => {
   loadRecent()
@@ -85,6 +106,15 @@ onMounted(() => {
 onUnmounted(() => {
   stopAutoRefresh()
 })
+
+function onPageChange(page: number) {
+  pageNum.value = page
+}
+
+function onSizeChange(size: number) {
+  pageSize.value = size
+  pageNum.value = 1
+}
 
 function taskStatusType(status?: string) {
   const s = (status || '').toUpperCase()
@@ -122,7 +152,9 @@ function taskTypeText(taskType?: string) {
 
 async function loadRecent() {
   try {
-    await store.fetchRecentTasks(12)
+    await store.fetchRecentTasks(recentFetchSize)
+    const maxPage = Math.max(1, Math.ceil(store.recentTasks.length / pageSize.value))
+    if (pageNum.value > maxPage) pageNum.value = maxPage
   } catch {
     ElMessage.error('加载最近任务失败')
   }
@@ -179,3 +211,10 @@ function toggleAutoRefresh() {
 }
 </script>
 
+<style scoped>
+.pager {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+</style>

@@ -118,7 +118,7 @@ async function onLogin() {
   try {
     await auth.login(form.username, form.password)
     const role = String(auth.userInfo?.role || '').toLowerCase()
-    await router.push(role === 'admin' ? '/admin' : '/user/chat')
+    await router.push(role === 'admin' ? '/admin' : '/user/home')
   } catch (e: any) {
     ElMessage.error(e?.message || '登录失败')
   } finally {

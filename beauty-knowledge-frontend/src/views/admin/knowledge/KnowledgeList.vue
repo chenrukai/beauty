@@ -112,7 +112,7 @@
         <el-descriptions-item label="摘要">{{ detail.summary || '-' }}</el-descriptions-item>
       </el-descriptions>
       <el-divider />
-      <div class="content">{{ detail.content || '暂无正文' }}</div>
+      <LinkifiedText class="content" :text="detail.content || '暂无正文'" />
       <el-divider />
       <div class="files-title">关联文件（{{ detail.files?.length || 0 }}）</div>
       <el-table :data="detail.files || []" stripe size="small">
@@ -196,6 +196,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useKnowledgeStore } from '../../../stores/knowledge'
+import LinkifiedText from '../../../components/common/LinkifiedText.vue'
 
 const store = useKnowledgeStore()
 const keyword = ref('')

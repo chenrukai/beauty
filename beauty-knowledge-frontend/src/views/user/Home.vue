@@ -19,7 +19,7 @@
       :title="`最新公告：${noticeList[0].title}`"
     >
       <template #default>
-        <div class="notice-content">{{ noticeList[0].content }}</div>
+        <LinkifiedText class="notice-content" :text="noticeList[0].content" />
       </template>
     </el-alert>
 
@@ -62,7 +62,7 @@
     <template v-if="knowledgeDetail">
       <h3 style="margin-top: 0">{{ knowledgeDetail.title }}</h3>
       <p class="dialog-summary">{{ knowledgeDetail.summary || '暂无摘要' }}</p>
-      <div class="dialog-content">{{ knowledgeDetail.content || '暂无正文' }}</div>
+      <LinkifiedText class="dialog-content" :text="knowledgeDetail.content || '暂无正文'" />
     </template>
   </el-dialog>
 </template>
@@ -72,6 +72,7 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import request from '../../api/request'
+import LinkifiedText from '../../components/common/LinkifiedText.vue'
 
 interface RecommendItem {
   id: number
