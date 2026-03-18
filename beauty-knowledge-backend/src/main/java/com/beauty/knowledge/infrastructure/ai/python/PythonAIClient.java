@@ -7,7 +7,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
@@ -31,6 +35,12 @@ public class PythonAIClient {
     @Value("${beauty.ai.python.timeout:30000}")
     private long timeoutMs;
 
+    @Value("${beauty.ai.python.transcribe-base-url:}")
+    private String transcribeBaseUrl;
+
+    @Value("${beauty.ai.python.transcribe-timeout:180000}")
+    private long transcribeTimeoutMs;
+
     @Value("${beauty.pipeline.embed-batch-size:32}")
     private int embedBatchSize;
 
@@ -49,7 +59,7 @@ public class PythonAIClient {
         } catch (BusinessException ex) {
             throw ex;
         } catch (Exception ex) {
-            throw new BusinessException(ErrorCode.AI_SERVICE_UNAVAILABLE, "Embedding服务不可用");
+            throw new BusinessException(ErrorCode.AI_SERVICE_UNAVAILABLE, "Embedding service unavailable");
         }
     }
 
@@ -64,18 +74,19 @@ public class PythonAIClient {
                     .bodyToMono(String.class)
                     .timeout(Duration.ofMillis(timeoutMs))
                     .block();
-            if (resp == null || resp.isBlank()) {
-                return "";
-            }
-            JsonNode node = objectMapper.readTree(resp);
-            if (node.has("text")) {
-                return node.path("text").asText("");
-            }
-            return "";
+            return parseTextResponse(resp);
         } catch (Exception ex) {
             log.warn("python ocr failed: {}", ex.getMessage());
             return "";
         }
+    }
+
+    public String transcribe(byte[] mediaBytes, String mediaType) {
+        String text = transcribeByJson(mediaBytes, mediaType);
+        if (text != null && !text.isBlank()) {
+            return text;
+        }
+        return transcribeByWhisperAsr(mediaBytes);
     }
 
     public boolean healthCheck() {
@@ -92,6 +103,68 @@ public class PythonAIClient {
         }
     }
 
+    private String transcribeByJson(byte[] mediaBytes, String mediaType) {
+        try {
+            Map<String, Object> req = new HashMap<>();
+            req.put("audioBase64", Base64.getEncoder().encodeToString(mediaBytes));
+            req.put("mediaType", mediaType == null ? "audio" : mediaType);
+            String resp = transcribeClient().post()
+                    .uri("/transcribe")
+                    .bodyValue(req)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .timeout(Duration.ofMillis(transcribeTimeoutMs))
+                    .block();
+            return parseTextResponse(resp);
+        } catch (Exception ex) {
+            log.warn("python /transcribe failed: {}", ex.getMessage());
+            return "";
+        }
+    }
+
+    private String transcribeByWhisperAsr(byte[] mediaBytes) {
+        try {
+            ByteArrayResource resource = new ByteArrayResource(mediaBytes) {
+                @Override
+                public String getFilename() {
+                    return "input.wav";
+                }
+            };
+            MultiValueMap<String, Object> form = new LinkedMultiValueMap<>();
+            form.add("audio_file", resource);
+            form.add("task", "transcribe");
+            form.add("encode", "true");
+            form.add("output", "json");
+
+            String resp = transcribeClient().post()
+                    .uri("/asr")
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .bodyValue(form)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .timeout(Duration.ofMillis(transcribeTimeoutMs))
+                    .block();
+            return parseTextResponse(resp);
+        } catch (Exception ex) {
+            log.warn("python /asr failed: {}", ex.getMessage());
+            return "";
+        }
+    }
+
+    private String parseTextResponse(String resp) throws Exception {
+        if (resp == null || resp.isBlank()) {
+            return "";
+        }
+        JsonNode node = objectMapper.readTree(resp);
+        if (node.has("text")) {
+            return node.path("text").asText("");
+        }
+        if (node.has("result")) {
+            return node.path("result").asText("");
+        }
+        return "";
+    }
+
     private List<float[]> embedBatch(List<String> batch) throws Exception {
         Map<String, Object> req = new HashMap<>();
         req.put("texts", batch);
@@ -103,12 +176,12 @@ public class PythonAIClient {
                 .timeout(Duration.ofMillis(timeoutMs))
                 .block();
         if (resp == null || resp.isBlank()) {
-            throw new BusinessException(ErrorCode.AI_SERVICE_UNAVAILABLE, "Embedding返回为空");
+            throw new BusinessException(ErrorCode.AI_SERVICE_UNAVAILABLE, "Embedding empty response");
         }
         JsonNode root = objectMapper.readTree(resp);
         JsonNode vectors = root.path("vectors");
         if (!vectors.isArray()) {
-            throw new BusinessException(ErrorCode.AI_SERVICE_UNAVAILABLE, "Embedding返回格式错误");
+            throw new BusinessException(ErrorCode.AI_SERVICE_UNAVAILABLE, "Embedding response format error");
         }
         List<float[]> result = new ArrayList<>();
         for (JsonNode v : vectors) {
@@ -126,5 +199,10 @@ public class PythonAIClient {
 
     private WebClient client() {
         return webClientBuilder.baseUrl(baseUrl).build();
+    }
+
+    private WebClient transcribeClient() {
+        String url = (transcribeBaseUrl == null || transcribeBaseUrl.isBlank()) ? baseUrl : transcribeBaseUrl;
+        return webClientBuilder.baseUrl(url).build();
     }
 }

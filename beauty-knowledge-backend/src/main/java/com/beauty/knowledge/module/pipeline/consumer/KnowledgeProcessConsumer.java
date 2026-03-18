@@ -4,6 +4,7 @@ import com.beauty.knowledge.common.constant.RabbitMQConstant;
 import com.beauty.knowledge.infrastructure.ai.python.PythonAIClient;
 import com.beauty.knowledge.infrastructure.storage.MinioStorageService;
 import com.beauty.knowledge.infrastructure.vector.MilvusVectorStore;
+import com.beauty.knowledge.module.entity.service.EntityExtractService;
 import com.beauty.knowledge.module.pipeline.domain.dto.ChunkDTO;
 import com.beauty.knowledge.module.pipeline.domain.entity.KbChunk;
 import com.beauty.knowledge.module.pipeline.domain.mq.ProcessMessage;
@@ -31,6 +32,7 @@ public class KnowledgeProcessConsumer {
     private final PipelineKbChunkMapper kbChunkMapper;
     private final PythonAIClient pythonAIClient;
     private final MilvusVectorStore milvusVectorStore;
+    private final EntityExtractService entityExtractService;
     private final Tika tika = new Tika();
 
     @RabbitListener(queues = RabbitMQConstant.PROCESS_QUEUE)
@@ -44,7 +46,7 @@ public class KnowledgeProcessConsumer {
             String text = parseText(msg.getFileType(), bytes);
             List<ChunkDTO> chunks = chunkService.split(text);
             if (chunks.isEmpty()) {
-                processTaskService.markFailed(fileId, "文本抽取为空");
+                processTaskService.markFailed(fileId, "No text extracted. Check parseable content or transcription availability.");
                 return;
             }
 
@@ -61,8 +63,6 @@ public class KnowledgeProcessConsumer {
             }).toList();
             kbChunkMapper.insertBatch(entities);
 
-            // Degrade gracefully when embedding/vector services are unavailable.
-            // Chunks should still be persisted so downstream pages can work.
             try {
                 List<String> texts = entities.stream().map(KbChunk::getContent).toList();
                 List<float[]> vectors = pythonAIClient.embed(texts);
@@ -71,13 +71,20 @@ public class KnowledgeProcessConsumer {
             } catch (Exception embedEx) {
                 log.warn("Embedding/vector unavailable, continue with bm25-only flow. fileId={}, reason={}", fileId, embedEx.getMessage());
             }
+            try {
+                // Auto-generate pending entity confirmation items after successful parsing.
+                entityExtractService.extractByText(fileId, text);
+            } catch (Exception extractEx) {
+                log.warn("Entity extraction skipped. fileId={}, reason={}", fileId, extractEx.getMessage());
+            }
 
             processTaskService.markSuccess(fileId);
             log.info("Process file success, fileId={}, chunks={}", fileId, entities.size());
         } catch (Exception ex) {
             log.error("Process file failed, fileId={}", fileId, ex);
             processTaskService.markFailed(fileId, ex.getMessage());
-            throw new IllegalStateException("文件处理失败", ex);
+            // Keep FAILED state and let admin trigger explicit retry.
+            // Avoid broker redelivery loops that cause "failed then success" jitter.
         }
     }
 

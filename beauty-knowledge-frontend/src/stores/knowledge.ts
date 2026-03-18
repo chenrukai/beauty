@@ -27,11 +27,24 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
 
   async function fetchKnowledgeDetail(id: number) {
     const res = await request.get(`/knowledge/${id}`)
-    return res.data
+    const data = res.data || {}
+    const knowledge = data.knowledge || {}
+    return {
+      ...knowledge,
+      files: data.files || []
+    }
   }
 
   async function createKnowledge(payload: any) {
     await request.post('/knowledge', payload)
+  }
+
+  async function deleteKnowledge(id: number) {
+    await request.delete(`/knowledge/${id}`)
+  }
+
+  async function updateKnowledgeStatus(id: number, status: 0 | 1) {
+    await request.put(`/knowledge/${id}/status`, null, { params: { status } })
   }
 
   async function pollTask(taskId: number) {
@@ -57,6 +70,8 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     fetchKnowledgePage,
     fetchKnowledgeDetail,
     createKnowledge,
+    deleteKnowledge,
+    updateKnowledgeStatus,
     pollTask,
     fetchRecentTasks
   }

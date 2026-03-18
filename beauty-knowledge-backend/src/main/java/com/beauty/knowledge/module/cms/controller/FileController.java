@@ -1,8 +1,8 @@
 package com.beauty.knowledge.module.cms.controller;
 
 import com.beauty.knowledge.common.result.Result;
-import com.beauty.knowledge.module.cms.domain.entity.ProcessTask;
 import com.beauty.knowledge.module.cms.domain.vo.FileUploadVO;
+import com.beauty.knowledge.module.cms.domain.vo.ProcessTaskViewVO;
 import com.beauty.knowledge.module.cms.service.FileService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -37,15 +37,15 @@ public class FileController {
         return Result.success(fileService.upload(file, knowledgeId, categoryId, fileType));
     }
 
-    @Operation(summary = "查询任务状态")
+    @Operation(summary = "查询任务详情")
     @GetMapping("/task/{taskId}")
-    public Result<ProcessTask> getTask(@PathVariable Long taskId) {
+    public Result<ProcessTaskViewVO> getTask(@PathVariable Long taskId) {
         return Result.success(fileService.getTask(taskId));
     }
 
     @Operation(summary = "查询最近任务")
     @GetMapping("/task/recent")
-    public Result<List<ProcessTask>> recentTasks(@RequestParam(value = "size", required = false) Integer size) {
+    public Result<List<ProcessTaskViewVO>> recentTasks(@RequestParam(value = "size", required = false) Integer size) {
         return Result.success(fileService.recentTasks(size));
     }
 

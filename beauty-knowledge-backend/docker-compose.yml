@@ -130,6 +130,26 @@ services:
     networks:
       - beauty-net
 
+  whisper-asr:
+    image: onerahmet/openai-whisper-asr-webservice:latest
+    container_name: beauty-whisper-asr
+    restart: unless-stopped
+    profiles:
+      - transcribe
+    environment:
+      ASR_MODEL: ${ASR_MODEL:-small}
+      ASR_ENGINE: ${ASR_ENGINE:-openai_whisper}
+    ports:
+      - "${WHISPER_PORT:-9002}:9000"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/docs" ]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+    networks:
+      - beauty-net
+
 networks:
   beauty-net:
     driver: bridge

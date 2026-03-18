@@ -135,15 +135,15 @@ public class EntityController {
     @Operation(summary = "待确认实体列表")
     @PreAuthorize("hasRole('admin')")
     @GetMapping("/pending")
-    public Result<List<EntityExtractPending>> pendingList() {
-        return Result.success(entityExtractService.pendingList());
+    public Result<List<EntityExtractPending>> pendingList(@RequestParam(required = false) String status) {
+        return Result.success(entityExtractService.pendingList(status));
     }
 
     @Operation(summary = "待确认数量")
     @PreAuthorize("hasRole('admin')")
     @GetMapping("/pending/count")
-    public Result<Map<String, Long>> pendingCount() {
-        return Result.success(Map.of("count", entityExtractService.pendingCount()));
+    public Result<Map<String, Long>> pendingCount(@RequestParam(required = false) String status) {
+        return Result.success(Map.of("count", entityExtractService.pendingCount(status)));
     }
 
     @Operation(summary = "批量确认实体")

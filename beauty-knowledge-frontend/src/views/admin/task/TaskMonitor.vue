@@ -3,59 +3,60 @@
     <template #header>任务监控</template>
 
     <el-form inline>
-      <el-form-item label="任务ID">
-        <el-input v-model.number="taskId" />
-      </el-form-item>
-      <el-form-item>
-        <el-button type="primary" @click="fetchTask">查询</el-button>
-      </el-form-item>
       <el-form-item>
         <el-button @click="loadRecent">刷新最近任务</el-button>
       </el-form-item>
       <el-form-item>
         <el-button :loading="autoRefreshing" @click="toggleAutoRefresh">
-          {{ autoRefreshing ? '停止自动刷新' : '自动刷新(5秒)' }}
+          {{ autoRefreshing ? '停止自动刷新' : '自动刷新（5秒）' }}
         </el-button>
       </el-form-item>
     </el-form>
 
     <el-descriptions v-if="task" :column="2" border style="margin-bottom: 12px">
-      <el-descriptions-item label="任务ID">{{ task.id }}</el-descriptions-item>
       <el-descriptions-item label="状态">
         <el-tag :type="taskStatusType(task.status)">{{ task.status }}</el-tag>
       </el-descriptions-item>
+      <el-descriptions-item label="类型">{{ taskTypeText(task.taskType) }}</el-descriptions-item>
+      <el-descriptions-item label="文件名">{{ task.fileName || '-' }}</el-descriptions-item>
+      <el-descriptions-item label="所属知识">{{ task.knowledgeTitle || '-' }}</el-descriptions-item>
       <el-descriptions-item label="进度">
         <el-progress :percentage="toPercent(task.progress)" :stroke-width="10" />
       </el-descriptions-item>
-      <el-descriptions-item label="结果">{{ task.resultMsg || '-' }}</el-descriptions-item>
+      <el-descriptions-item label="结果信息">{{ task.resultMsg || '-' }}</el-descriptions-item>
       <el-descriptions-item label="开始时间">{{ task.startedAt || '-' }}</el-descriptions-item>
       <el-descriptions-item label="结束时间">{{ task.finishedAt || '-' }}</el-descriptions-item>
     </el-descriptions>
 
     <el-alert
       v-if="store.recentTasks.length === 0"
-      title="暂无任务数据。只有执行上传并入队后，才会生成处理任务。"
+      title="暂无任务数据。执行上传并入队后会生成处理任务。"
       type="info"
       :closable="false"
       style="margin-bottom: 12px"
     />
 
     <el-table :data="store.recentTasks" stripe>
-      <el-table-column prop="id" label="任务ID" width="90" />
-      <el-table-column prop="fileId" label="文件ID" width="90" />
-      <el-table-column prop="taskType" label="类型" width="180" />
+      <el-table-column prop="fileName" label="文件名" min-width="200" show-overflow-tooltip />
+      <el-table-column prop="knowledgeTitle" label="所属知识" min-width="200" show-overflow-tooltip />
+      <el-table-column label="类型" width="150">
+        <template #default="{ row }">
+          {{ taskTypeText(row.taskType) }}
+        </template>
+      </el-table-column>
       <el-table-column label="状态" width="120">
         <template #default="{ row }">
           <el-tag :type="taskStatusType(row.status)">{{ row.status }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="进度" width="180">
+      <el-table-column label="进度" width="160">
         <template #default="{ row }">
           <el-progress :percentage="toPercent(row.progress)" :stroke-width="8" />
         </template>
       </el-table-column>
-      <el-table-column prop="resultMsg" label="结果信息" />
-      <el-table-column label="操作" width="160">
+      <el-table-column prop="resultMsg" label="结果信息" min-width="220" show-overflow-tooltip />
+      <el-table-column prop="updatedAt" label="更新时间" min-width="170" />
+      <el-table-column label="操作" width="150" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="pickTask(row.id)">查看</el-button>
           <el-button
@@ -79,7 +80,7 @@ import request from '../../../api/request'
 import { useKnowledgeStore } from '../../../stores/knowledge'
 
 const store = useKnowledgeStore()
-const taskId = ref<number>(1)
+const selectedTaskId = ref<number | null>(null)
 const task = ref<any>(null)
 const autoRefreshing = ref(false)
 let timer: ReturnType<typeof setInterval> | null = null
@@ -93,23 +94,28 @@ onUnmounted(() => {
 })
 
 function taskStatusType(status?: string) {
-  const normalized = (status || '').toUpperCase()
-  if (normalized.includes('SUCCESS') || normalized.includes('DONE')) return 'success'
-  if (normalized.includes('FAIL') || normalized.includes('ERROR')) return 'danger'
-  if (normalized.includes('RUN') || normalized.includes('PROCESS')) return 'warning'
+  const s = (status || '').toUpperCase()
+  if (s.includes('SUCCESS')) return 'success'
+  if (s.includes('FAIL')) return 'danger'
+  if (s.includes('PROCESS') || s.includes('RUN') || s.includes('PENDING')) return 'warning'
   return 'info'
 }
 
 function toPercent(progress?: number) {
   const val = Number(progress || 0)
-  if (val < 0) return 0
-  if (val > 100) return 100
-  return val
+  return Math.max(0, Math.min(100, val))
 }
 
 function canRetry(status?: string) {
-  const normalized = (status || '').toUpperCase()
-  return normalized.includes('FAIL') || normalized.includes('ERROR')
+  const s = (status || '').toUpperCase()
+  return s.includes('FAIL') || s.includes('ERROR')
+}
+
+function taskTypeText(taskType?: string) {
+  const t = (taskType || '').toUpperCase()
+  if (t === 'KNOWLEDGE_CREATE') return '知识创建'
+  if (t === 'KNOWLEDGE_PROCESS') return '文件处理'
+  return taskType || '-'
 }
 
 async function loadRecent() {
@@ -121,26 +127,27 @@ async function loadRecent() {
 }
 
 async function fetchTask() {
+  if (!selectedTaskId.value) return
   try {
-    task.value = await store.pollTask(taskId.value)
+    task.value = await store.pollTask(selectedTaskId.value)
   } catch {
-    ElMessage.error('查询任务失败')
+    ElMessage.error('加载任务详情失败')
   }
 }
 
 async function pickTask(id: number) {
-  taskId.value = id
+  selectedTaskId.value = id
   await fetchTask()
 }
 
 async function retryTask(id: number) {
   try {
     await request.post(`/file/task/${id}/retry`)
-    ElMessage.success('重试任务已提交')
+    ElMessage.success('已提交重试')
     await loadRecent()
     await pickTask(id)
   } catch (e: any) {
-    ElMessage.error(e?.message || '重试任务失败')
+    ElMessage.error(e?.message || '重试失败')
   }
 }
 
@@ -149,9 +156,7 @@ function startAutoRefresh() {
   autoRefreshing.value = true
   timer = setInterval(async () => {
     await loadRecent()
-    if (taskId.value) {
-      await fetchTask()
-    }
+    await fetchTask()
   }, 5000)
 }
 
@@ -166,8 +171,8 @@ function stopAutoRefresh() {
 function toggleAutoRefresh() {
   if (autoRefreshing.value) {
     stopAutoRefresh()
-    return
+  } else {
+    startAutoRefresh()
   }
-  startAutoRefresh()
 }
 </script>

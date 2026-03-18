@@ -23,6 +23,14 @@
         </el-select>
       </el-form-item>
       <el-form-item>
+        <el-select v-model="statusFilter" placeholder="按状态筛选" style="width: 180px">
+          <el-option label="全部" value="ALL" />
+          <el-option label="待确认" value="PENDING" />
+          <el-option label="已确认" value="CONFIRMED" />
+          <el-option label="已拒绝" value="REJECTED" />
+        </el-select>
+      </el-form-item>
+      <el-form-item>
         <el-input v-model="keyword" clearable placeholder="按名称搜索" style="width: 220px" />
       </el-form-item>
       <el-form-item>
@@ -39,15 +47,33 @@
     />
 
     <el-table :data="filtered" stripe>
-      <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="entityType" label="类型" width="120" />
       <el-table-column prop="entityName" label="名称" min-width="180" />
+      <el-table-column prop="status" label="状态" width="120">
+        <template #default="{ row }">
+          <el-tag :type="statusType(row.status)">{{ statusText(row.status) }}</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="extractMethod" label="来源" width="120" />
       <el-table-column prop="sourceText" label="来源文本" min-width="260" show-overflow-tooltip />
       <el-table-column label="操作" width="220">
         <template #default="{ row }">
-          <el-button size="small" type="success" @click="confirmOne(row.id, true)">确认</el-button>
-          <el-button size="small" type="danger" @click="confirmOne(row.id, false)">拒绝</el-button>
+          <el-button
+            size="small"
+            type="success"
+            :disabled="row.status !== 'PENDING'"
+            @click="confirmOne(row.id, true)"
+          >
+            确认
+          </el-button>
+          <el-button
+            size="small"
+            type="danger"
+            :disabled="row.status !== 'PENDING'"
+            @click="confirmOne(row.id, false)"
+          >
+            拒绝
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -55,15 +81,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useEntityStore } from '../../../stores/entity'
 
 const store = useEntityStore()
 const typeFilter = ref<string | undefined>()
+const statusFilter = ref('ALL')
 const keyword = ref('')
 
 onMounted(() => {
+  reload()
+})
+
+watch(statusFilter, () => {
   reload()
 })
 
@@ -83,7 +114,7 @@ const typeCount = computed(() => ({
 
 async function reload() {
   try {
-    await Promise.all([store.fetchPending(), store.fetchPendingCount()])
+    await Promise.all([store.fetchPending(statusFilter.value), store.fetchPendingCount()])
   } catch {
     ElMessage.error('加载待确认实体失败')
   }
@@ -91,10 +122,26 @@ async function reload() {
 
 async function confirmOne(id: number, accept: boolean) {
   try {
-    await store.confirm([{ pendingId: id, accept }])
+    await store.confirm([{ pendingId: id, accept }], statusFilter.value)
     ElMessage.success('操作成功')
   } catch {
     ElMessage.error('提交确认失败')
   }
+}
+
+function statusText(status?: string) {
+  const s = (status || '').toUpperCase()
+  if (s === 'PENDING') return '待确认'
+  if (s === 'CONFIRMED') return '已确认'
+  if (s === 'REJECTED') return '已拒绝'
+  return status || '-'
+}
+
+function statusType(status?: string) {
+  const s = (status || '').toUpperCase()
+  if (s === 'CONFIRMED') return 'success'
+  if (s === 'REJECTED') return 'danger'
+  if (s === 'PENDING') return 'warning'
+  return 'info'
 }
 </script>

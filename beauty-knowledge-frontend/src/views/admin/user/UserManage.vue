@@ -4,7 +4,7 @@
       <template #header>
         <div class="head">
           <strong>用户管理</strong>
-          <span>仅管理员可用。自主注册账号默认均为普通用户。</span>
+          <span>仅管理员可操作。支持启用/禁用，以及普通用户与管理员角色切换。</span>
         </div>
       </template>
 
@@ -29,9 +29,8 @@
       </div>
 
       <el-table v-loading="loading" :data="list" stripe>
-        <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="username" label="用户名" min-width="180" />
-        <el-table-column prop="nickname" label="昵称" min-width="120" />
+        <el-table-column prop="nickname" label="昵称" min-width="140" />
         <el-table-column prop="role" label="角色" width="120">
           <template #default="{ row }">
             <el-tag :type="row.role === 'admin' ? 'warning' : 'info'">
@@ -47,7 +46,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="createdAt" label="创建时间" min-width="180" />
-        <el-table-column label="操作" width="140" fixed="right">
+        <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
             <el-button
               v-if="row.status === 1"
@@ -64,6 +63,23 @@
               @click="setStatus(row, 1)"
             >
               启用
+            </el-button>
+
+            <el-button
+              v-if="row.role === 'user'"
+              type="warning"
+              link
+              @click="setRole(row, 'admin')"
+            >
+              设为管理员
+            </el-button>
+            <el-button
+              v-else
+              type="primary"
+              link
+              @click="setRole(row, 'user')"
+            >
+              设为普通用户
             </el-button>
           </template>
         </el-table-column>
@@ -172,6 +188,22 @@ async function setStatus(row: UserRow, status: 0 | 1) {
     await fetchPage()
   } catch (e: any) {
     ElMessage.error(e?.message || `${action}失败`)
+  }
+}
+
+async function setRole(row: UserRow, role: 'admin' | 'user') {
+  const action = role === 'admin' ? '设为管理员' : '设为普通用户'
+  await ElMessageBox.confirm(`确认将用户“${row.username}”${action}吗？`, '角色确认', {
+    type: 'warning',
+    confirmButtonText: '确认',
+    cancelButtonText: '取消'
+  })
+  try {
+    await request.put(`/admin/user/${row.id}/role`, null, { params: { role } })
+    ElMessage.success('角色更新成功')
+    await fetchPage()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '角色更新失败')
   }
 }
 </script>

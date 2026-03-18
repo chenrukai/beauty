@@ -58,6 +58,14 @@ public class KnowledgeController {
         return Result.success();
     }
 
+    @Operation(summary = "更新知识状态")
+    @PreAuthorize("hasRole('admin')")
+    @PutMapping("/{id}/status")
+    public Result<Void> updateStatus(@PathVariable Long id, @RequestParam Integer status) {
+        knowledgeService.updateStatus(id, status);
+        return Result.success();
+    }
+
     @Operation(summary = "删除知识")
     @PreAuthorize("hasRole('admin')")
     @DeleteMapping("/{id}")

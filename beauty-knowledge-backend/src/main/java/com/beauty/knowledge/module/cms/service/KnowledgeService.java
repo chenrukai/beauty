@@ -18,5 +18,7 @@ public interface KnowledgeService {
 
     void remove(Long id);
 
+    void updateStatus(Long id, Integer status);
+
     PageResult<KbKnowledge> search(String keyword, Long pageNum, Long pageSize);
 }

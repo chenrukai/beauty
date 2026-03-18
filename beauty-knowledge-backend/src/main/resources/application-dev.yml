@@ -35,8 +35,10 @@ beauty:
     port: 19530
   ai:
     python:
-      base-url: http://localhost:8001
+      base-url: ${PYTHON_AI_BASE_URL:http://localhost:8001}
       timeout: 30000
+      transcribe-base-url: ${PYTHON_TRANSCRIBE_BASE_URL:${PYTHON_AI_BASE_URL:http://localhost:8001}}
+      transcribe-timeout: 180000
   llm:
     provider: ollama
     ollama:

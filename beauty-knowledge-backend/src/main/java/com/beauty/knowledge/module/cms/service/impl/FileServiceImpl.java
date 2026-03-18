@@ -13,6 +13,7 @@ import com.beauty.knowledge.module.cms.domain.entity.KbFile;
 import com.beauty.knowledge.module.cms.domain.entity.KbKnowledge;
 import com.beauty.knowledge.module.cms.domain.entity.ProcessTask;
 import com.beauty.knowledge.module.cms.domain.vo.FileUploadVO;
+import com.beauty.knowledge.module.cms.domain.vo.ProcessTaskViewVO;
 import com.beauty.knowledge.module.cms.mapper.KbChunkMapper;
 import com.beauty.knowledge.module.cms.mapper.KbFileMapper;
 import com.beauty.knowledge.module.cms.mapper.KbKnowledgeMapper;
@@ -30,6 +31,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @Slf4j
@@ -59,9 +61,18 @@ public class FileServiceImpl implements FileService {
             throw new BusinessException(ErrorCode.KNOWLEDGE_NOT_FOUND);
         }
 
-        String detectedType = StringUtils.hasText(fileType) ? fileType : detectFileType(file.getOriginalFilename());
-        String fileHash = FileHashUtil.sha256(file);
+        String detectedType = resolveFileType(fileType, file.getOriginalFilename());
+        validateFileExtension(detectedType, file.getOriginalFilename());
+        String knowledgeType = normalizeKnowledgeType(knowledge.getType());
+        String uploadMappedType = mapUploadTypeToKnowledgeType(detectedType);
+        if (!knowledgeType.equals(uploadMappedType)) {
+            throw new BusinessException(
+                    ErrorCode.BAD_REQUEST,
+                    "文件类型与知识类型不一致：知识=" + knowledgeType + "，文件=" + uploadMappedType
+            );
+        }
 
+        String fileHash = FileHashUtil.sha256(file);
         KbFile existing = kbFileMapper.selectOne(new LambdaQueryWrapper<KbFile>()
                 .eq(KbFile::getFileHash, fileHash)
                 .last("limit 1"));
@@ -128,23 +139,30 @@ public class FileServiceImpl implements FileService {
     }
 
     @Override
-    public ProcessTask getTask(Long taskId) {
+    public ProcessTaskViewVO getTask(Long taskId) {
         ProcessTask task = processTaskMapper.selectById(taskId);
         if (task == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "任务不存在");
         }
-        return task;
+        ProcessTaskViewVO view = toTaskView(task);
+        if (view == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "task not found");
+        }
+        return view;
     }
 
     @Override
-    public List<ProcessTask> recentTasks(Integer size) {
+    public List<ProcessTaskViewVO> recentTasks(Integer size) {
         int limit = (size == null || size <= 0) ? 10 : Math.min(size, 50);
         try {
-            return processTaskMapper.selectList(new LambdaQueryWrapper<ProcessTask>()
+            List<ProcessTask> tasks = processTaskMapper.selectList(new LambdaQueryWrapper<ProcessTask>()
                     .orderByDesc(ProcessTask::getId)
                     .last("limit " + limit));
+            return tasks.stream()
+                    .map(this::toTaskView)
+                    .filter(Objects::nonNull)
+                    .toList();
         } catch (Exception ex) {
-            // Compatible with environments where process_task table is not initialized yet.
             log.warn("process_task table not ready, return empty recent task list");
             return List.of();
         }
@@ -205,14 +223,155 @@ public class FileServiceImpl implements FileService {
         kbFileMapper.deleteById(fileId);
     }
 
+    private ProcessTaskViewVO toTaskView(ProcessTask task) {
+        KbFile file = task.getFileId() == null ? null : kbFileMapper.selectById(task.getFileId());
+        if (file == null) {
+            return null;
+        }
+        KbKnowledge knowledge = (file == null || file.getKnowledgeId() == null)
+                ? null
+                : kbKnowledgeMapper.selectById(file.getKnowledgeId());
+        if (knowledge == null) {
+            return null;
+        }
+        return ProcessTaskViewVO.builder()
+                .id(task.getId())
+                .fileId(task.getFileId())
+                .fileName(file == null ? null : file.getOriginalName())
+                .knowledgeId(file == null ? null : file.getKnowledgeId())
+                .knowledgeTitle(knowledge == null ? null : knowledge.getTitle())
+                .taskType(task.getTaskType())
+                .status(task.getStatus())
+                .progress(task.getProgress())
+                .resultMsg(task.getResultMsg())
+                .retryCount(task.getRetryCount())
+                .maxRetry(task.getMaxRetry())
+                .startedAt(task.getStartedAt())
+                .finishedAt(task.getFinishedAt())
+                .createdAt(task.getCreatedAt())
+                .updatedAt(task.getUpdatedAt())
+                .build();
+    }
+
+    private String resolveFileType(String requestFileType, String originalName) {
+        if (StringUtils.hasText(requestFileType) && !"auto".equalsIgnoreCase(requestFileType)) {
+            String normalized = requestFileType.toLowerCase();
+            if ("audio".equals(normalized) || "video".equals(normalized)) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "音频/视频上传暂不支持");
+            }
+            return normalized;
+        }
+        return detectFileType(originalName);
+    }
+
     private String detectFileType(String originalName) {
         if (!StringUtils.hasText(originalName)) {
-            return "pdf";
+            return "doc_word";
         }
         String lower = originalName.toLowerCase();
-        if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp")) {
+        if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")
+                || lower.endsWith(".webp") || lower.endsWith(".bmp") || lower.endsWith(".gif")) {
             return "image";
         }
-        return "pdf";
+        if (lower.endsWith(".txt") || lower.endsWith(".csv") || lower.endsWith(".json")) {
+            return "text_txt";
+        }
+        if (lower.endsWith(".md")) {
+            return "text_md";
+        }
+        if (lower.endsWith(".pdf")) {
+            return "doc_pdf";
+        }
+        if (lower.endsWith(".ppt") || lower.endsWith(".pptx")) {
+            return "doc_ppt";
+        }
+        if (lower.endsWith(".xls") || lower.endsWith(".xlsx")) {
+            return "doc_excel";
+        }
+        return "doc_word";
+    }
+
+    private String normalizeKnowledgeType(String type) {
+        if (!StringUtils.hasText(type)) {
+            return "TEXT_TXT";
+        }
+        String normalized = type.trim().toUpperCase();
+        if ("PDF".equals(normalized)) {
+            return "DOC_PDF";
+        }
+        if ("DOC".equals(normalized)) {
+            return "DOC_WORD";
+        }
+        if ("TEXT".equals(normalized)) {
+            return "TEXT_TXT";
+        }
+        if ("IMAGE".equals(normalized)
+                || "TEXT_TXT".equals(normalized)
+                || "TEXT_MD".equals(normalized)
+                || "DOC_PDF".equals(normalized)
+                || "DOC_WORD".equals(normalized)
+                || "DOC_PPT".equals(normalized)
+                || "DOC_EXCEL".equals(normalized)) {
+            return normalized;
+        }
+        return "TEXT_TXT";
+    }
+
+    private String mapUploadTypeToKnowledgeType(String uploadType) {
+        if (!StringUtils.hasText(uploadType)) {
+            return "DOC_WORD";
+        }
+        String normalized = uploadType.trim().toLowerCase();
+        if ("image".equals(normalized)) {
+            return "IMAGE";
+        }
+        if ("text_txt".equals(normalized)) {
+            return "TEXT_TXT";
+        }
+        if ("text_md".equals(normalized)) {
+            return "TEXT_MD";
+        }
+        if ("doc_pdf".equals(normalized) || "pdf".equals(normalized)) {
+            return "DOC_PDF";
+        }
+        if ("doc_word".equals(normalized) || "doc".equals(normalized)) {
+            return "DOC_WORD";
+        }
+        if ("doc_ppt".equals(normalized)) {
+            return "DOC_PPT";
+        }
+        if ("doc_excel".equals(normalized)) {
+            return "DOC_EXCEL";
+        }
+        return "DOC_WORD";
+    }
+
+    private void validateFileExtension(String uploadType, String originalName) {
+        if (!StringUtils.hasText(originalName)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件名不能为空");
+        }
+        String name = originalName.toLowerCase();
+        boolean ok = switch (uploadType) {
+            case "image" -> hasAnySuffix(name, ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif");
+            case "text_txt" -> hasAnySuffix(name, ".txt", ".csv", ".json");
+            case "text_md" -> hasAnySuffix(name, ".md");
+            case "doc_pdf" -> hasAnySuffix(name, ".pdf");
+            case "doc_word" -> hasAnySuffix(name, ".doc", ".docx");
+            case "doc_ppt" -> hasAnySuffix(name, ".ppt", ".pptx");
+            case "doc_excel" -> hasAnySuffix(name, ".xls", ".xlsx");
+            default -> false;
+        };
+        if (!ok) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件扩展名与文件类型不匹配");
+        }
+    }
+
+    private boolean hasAnySuffix(String name, String... suffixes) {
+        for (String suffix : suffixes) {
+            if (name.endsWith(suffix)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

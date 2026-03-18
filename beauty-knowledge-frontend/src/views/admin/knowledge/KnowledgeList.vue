@@ -44,9 +44,12 @@
     </el-form>
 
     <el-table :data="store.knowledgeList" stripe>
-      <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="title" label="标题" min-width="220" show-overflow-tooltip />
-      <el-table-column prop="type" label="类型" width="110" />
+      <el-table-column label="类型" width="110">
+        <template #default="{ row }">
+          {{ normalizeType(row.type) }}
+        </template>
+      </el-table-column>
       <el-table-column prop="status" label="状态" width="110">
         <template #default="{ row }">
           <el-tag :type="Number(row.status) === 1 ? 'success' : 'info'">
@@ -55,9 +58,26 @@
         </template>
       </el-table-column>
       <el-table-column prop="viewCount" label="浏览" width="100" />
-      <el-table-column label="操作" width="100">
+      <el-table-column label="操作" width="220">
         <template #default="{ row }">
           <el-button link type="primary" @click="openDetail(row.id)">详情</el-button>
+          <el-button
+            v-if="Number(row.status) === 0"
+            link
+            type="success"
+            @click="changeStatus(row.id, 1, row.title)"
+          >
+            发布
+          </el-button>
+          <el-button
+            v-else
+            link
+            type="warning"
+            @click="changeStatus(row.id, 0, row.title)"
+          >
+            撤回
+          </el-button>
+          <el-button link type="danger" @click="removeKnowledge(row.id, row.title)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -77,14 +97,22 @@
   <el-drawer v-model="drawerVisible" title="知识详情" size="46%">
     <template v-if="detail">
       <el-descriptions :column="1" border>
-        <el-descriptions-item label="ID">{{ detail.id }}</el-descriptions-item>
         <el-descriptions-item label="标题">{{ detail.title }}</el-descriptions-item>
-        <el-descriptions-item label="类型">{{ detail.type }}</el-descriptions-item>
+        <el-descriptions-item label="类型">{{ normalizeType(detail.type) }}</el-descriptions-item>
         <el-descriptions-item label="状态">{{ Number(detail.status) === 1 ? '已发布' : '草稿' }}</el-descriptions-item>
         <el-descriptions-item label="摘要">{{ detail.summary || '-' }}</el-descriptions-item>
       </el-descriptions>
       <el-divider />
       <div class="content">{{ detail.content || '暂无正文' }}</div>
+      <el-divider />
+      <div class="files-title">关联文件（{{ detail.files?.length || 0 }}）</div>
+      <el-table :data="detail.files || []" stripe size="small">
+        <el-table-column prop="id" label="文件ID" width="90" />
+        <el-table-column prop="originalName" label="文件名" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="fileType" label="类型" width="100" />
+        <el-table-column prop="processStatus" label="处理状态" width="120" />
+        <el-table-column prop="createdAt" label="上传时间" min-width="180" />
+      </el-table>
     </template>
   </el-drawer>
 
@@ -107,8 +135,12 @@
 
       <el-form-item label="类型">
         <el-select v-model="createForm.type" style="width: 180px">
-          <el-option label="TEXT" value="TEXT" />
-          <el-option label="PDF" value="PDF" />
+          <el-option label="TEXT_TXT" value="TEXT_TXT" />
+          <el-option label="TEXT_MD" value="TEXT_MD" />
+          <el-option label="DOC_PDF" value="DOC_PDF" />
+          <el-option label="DOC_WORD" value="DOC_WORD" />
+          <el-option label="DOC_PPT" value="DOC_PPT" />
+          <el-option label="DOC_EXCEL" value="DOC_EXCEL" />
           <el-option label="IMAGE" value="IMAGE" />
         </el-select>
       </el-form-item>
@@ -152,7 +184,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useKnowledgeStore } from '../../../stores/knowledge'
 
 const store = useKnowledgeStore()
@@ -169,7 +201,7 @@ const createForm = ref({
   title: '',
   summary: '',
   categoryId: undefined as number | undefined,
-  type: 'TEXT',
+  type: 'TEXT_TXT',
   content: '',
   status: 1
 })
@@ -206,6 +238,15 @@ const flatCategories = computed(() => {
   return out
 })
 
+function normalizeType(type?: string) {
+  const t = (type || '').toUpperCase()
+  if (t === 'PDF') return 'DOC_PDF'
+  if (t === 'DOC') return 'DOC_WORD'
+  if (t === 'TEXT') return 'TEXT_TXT'
+  if (['TEXT_TXT', 'TEXT_MD', 'DOC_PDF', 'DOC_WORD', 'DOC_PPT', 'DOC_EXCEL', 'IMAGE'].includes(t)) return t
+  return 'TEXT_TXT'
+}
+
 function buildParams(page: number) {
   const params: any = { pageNum: page, pageSize: pageSize.value }
   if (keyword.value) params.keyword = keyword.value
@@ -237,12 +278,57 @@ async function openDetail(id: number) {
   }
 }
 
+async function removeKnowledge(id: number, title: string) {
+  try {
+    await ElMessageBox.confirm(`确认删除知识《${title}》吗？该操作不可恢复。`, '删除确认', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消'
+    })
+  } catch {
+    return
+  }
+
+  try {
+    await store.deleteKnowledge(id)
+    ElMessage.success('删除成功')
+    if (detail.value?.id === id) {
+      drawerVisible.value = false
+      detail.value = null
+    }
+    await load(pageNum.value)
+  } catch (e: any) {
+    ElMessage.error(e?.message || '删除失败')
+  }
+}
+
+async function changeStatus(id: number, status: 0 | 1, title: string) {
+  const action = status === 1 ? '发布' : '撤回'
+  try {
+    await ElMessageBox.confirm(`确认${action}知识《${title}》吗？`, '状态确认', {
+      type: 'warning',
+      confirmButtonText: action,
+      cancelButtonText: '取消'
+    })
+  } catch {
+    return
+  }
+
+  try {
+    await store.updateKnowledgeStatus(id, status)
+    ElMessage.success(`${action}成功`)
+    await load(pageNum.value)
+  } catch (e: any) {
+    ElMessage.error(e?.message || `${action}失败`)
+  }
+}
+
 function openCreate() {
   createForm.value = {
     title: '',
     summary: '',
     categoryId: flatCategories.value[0]?.id,
-    type: 'TEXT',
+    type: 'TEXT_TXT',
     content: '',
     status: 1
   }
@@ -284,5 +370,11 @@ async function submitCreate() {
   white-space: pre-wrap;
   line-height: 1.8;
   color: #334155;
+}
+
+.files-title {
+  margin-bottom: 10px;
+  font-weight: 600;
+  color: #0f172a;
 }
 </style>

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="overview">
     <el-row :gutter="12">
       <el-col :xs="24" :sm="12" :md="6">
@@ -21,36 +21,40 @@
       </el-col>
       <el-col :xs="24" :sm="12" :md="6">
         <el-card shadow="hover" class="metric">
-          <div class="metric-label">近期待处理任务</div>
+          <div class="metric-label">待处理任务</div>
           <div class="metric-value">{{ metrics.pendingTask }}</div>
         </el-card>
       </el-col>
     </el-row>
 
     <el-row :gutter="12" style="margin-top: 12px">
-      <el-col :xs="24" :lg="14">
+      <el-col :xs="24" :lg="16">
         <el-card>
           <template #header>最近任务</template>
           <el-table :data="knowledgeStore.recentTasks" stripe>
-            <el-table-column prop="id" label="任务ID" width="90" />
-            <el-table-column prop="fileId" label="文件ID" width="90" />
+            <el-table-column prop="fileName" label="文件名" min-width="200" show-overflow-tooltip />
+            <el-table-column prop="knowledgeTitle" label="所属知识" min-width="200" show-overflow-tooltip />
             <el-table-column prop="status" label="状态" width="120">
               <template #default="{ row }">
                 <el-tag :type="statusTagType(row.status)">{{ row.status }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="progress" label="进度" width="90" />
-            <el-table-column prop="updatedAt" label="更新时间" />
+            <el-table-column label="进度" width="150">
+              <template #default="{ row }">
+                <el-progress :percentage="toPercent(row.progress)" :stroke-width="8" />
+              </template>
+            </el-table-column>
+            <el-table-column prop="updatedAt" label="更新时间" min-width="170" />
           </el-table>
         </el-card>
       </el-col>
-      <el-col :xs="24" :lg="10">
+      <el-col :xs="24" :lg="8">
         <el-card>
-          <template #header>页面提示</template>
+          <template #header>检查提示</template>
           <ul class="tips">
-            <li>如果“分类树”为空，先检查后端分类接口是否正常返回数据。</li>
-            <li>“实体确认”为 0 是正常现象，需要先上传文件并完成抽取流程。</li>
-            <li>“任务监控”可以从最近任务点“查看”，不需要手输 Task ID。</li>
+            <li>优先看“文件名 + 所属知识 + 状态 + 结果信息”。</li>
+            <li>失败任务可在“任务监控”页面直接重试。</li>
+            <li>如果任务长期处于 PENDING，请检查 RabbitMQ 消费端。</li>
           </ul>
         </el-card>
       </el-col>
@@ -74,9 +78,8 @@ onMounted(async () => {
     knowledgeStore.fetchRecentTasks(8),
     entityStore.fetchPendingCount()
   ])
-  const hasFailure = results.some((it) => it.status === 'rejected')
-  if (hasFailure) {
-    ElMessage.warning('部分总览数据加载失败，请检查数据库表是否完整')
+  if (results.some((it) => it.status === 'rejected')) {
+    ElMessage.warning('部分总览数据加载失败')
   }
 })
 
@@ -84,18 +87,26 @@ const metrics = computed(() => ({
   knowledgeTotal: knowledgeStore.knowledgePage.total || knowledgeStore.knowledgeList.length,
   categoryTotal: countTreeNodes(knowledgeStore.categoryTree),
   pendingEntity: entityStore.pendingCount,
-  pendingTask: knowledgeStore.recentTasks.filter((it: any) => it.status === 'PENDING' || it.status === 'RUNNING').length
+  pendingTask: knowledgeStore.recentTasks.filter((it: any) =>
+    ['PENDING', 'PROCESSING', 'RUNNING'].includes((it.status || '').toUpperCase())
+  ).length
 }))
 
 function countTreeNodes(list: any[]): number {
   return list.reduce((acc, node) => acc + 1 + countTreeNodes(node.children || []), 0)
 }
 
-function statusTagType(status: string) {
-  if (status === 'SUCCESS') return 'success'
-  if (status === 'FAILED') return 'danger'
-  if (status === 'RUNNING') return 'warning'
+function statusTagType(status?: string) {
+  const s = (status || '').toUpperCase()
+  if (s.includes('SUCCESS')) return 'success'
+  if (s.includes('FAIL')) return 'danger'
+  if (s.includes('PROCESS') || s.includes('RUN') || s.includes('PENDING')) return 'warning'
   return 'info'
+}
+
+function toPercent(progress?: number) {
+  const val = Number(progress || 0)
+  return Math.max(0, Math.min(100, val))
 }
 </script>
 

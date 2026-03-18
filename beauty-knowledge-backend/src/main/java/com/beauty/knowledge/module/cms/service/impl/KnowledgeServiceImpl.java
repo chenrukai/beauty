@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.beauty.knowledge.common.exception.BusinessException;
 import com.beauty.knowledge.common.exception.ErrorCode;
 import com.beauty.knowledge.common.result.PageResult;
+import com.beauty.knowledge.common.util.FileHashUtil;
 import com.beauty.knowledge.common.util.SecurityUtil;
 import com.beauty.knowledge.infrastructure.storage.MinioStorageService;
 import com.beauty.knowledge.infrastructure.vector.MilvusVectorStore;
@@ -17,12 +18,15 @@ import com.beauty.knowledge.module.cms.domain.vo.KnowledgeDetailVO;
 import com.beauty.knowledge.module.cms.mapper.KbChunkMapper;
 import com.beauty.knowledge.module.cms.mapper.KbFileMapper;
 import com.beauty.knowledge.module.cms.mapper.KbKnowledgeMapper;
+import com.beauty.knowledge.module.cms.mapper.ProcessTaskMapper;
 import com.beauty.knowledge.module.cms.service.KnowledgeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -34,6 +38,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
     private final KbChunkMapper kbChunkMapper;
     private final MilvusVectorStore milvusVectorStore;
     private final MinioStorageService minioStorageService;
+    private final ProcessTaskMapper processTaskMapper;
 
     @Override
     public PageResult<KbKnowledge> page(KnowledgePageDTO dto) {
@@ -66,13 +71,14 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         knowledge.setTitle(dto.getTitle());
         knowledge.setSummary(dto.getSummary());
         knowledge.setCategoryId(dto.getCategoryId());
-        knowledge.setType(dto.getType() == null ? "TEXT" : dto.getType());
+        knowledge.setType(normalizeKnowledgeType(dto.getType()));
         knowledge.setContent(dto.getContent());
         knowledge.setStatus(dto.getStatus() == null ? 1 : dto.getStatus());
         knowledge.setCoverUrl(dto.getCoverUrl());
         knowledge.setViewCount(0);
         knowledge.setAuthorId(SecurityUtil.getCurrentUserId());
         kbKnowledgeMapper.insert(knowledge);
+        createInitialTaskByKnowledgeContent(knowledge);
     }
 
     @Override
@@ -85,7 +91,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         knowledge.setTitle(dto.getTitle());
         knowledge.setSummary(dto.getSummary());
         knowledge.setCategoryId(dto.getCategoryId());
-        knowledge.setType(dto.getType() == null ? "TEXT" : dto.getType());
+        knowledge.setType(normalizeKnowledgeType(dto.getType()));
         knowledge.setContent(dto.getContent());
         knowledge.setStatus(dto.getStatus() == null ? 1 : dto.getStatus());
         knowledge.setCoverUrl(dto.getCoverUrl());
@@ -111,6 +117,20 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         }
 
         kbKnowledgeMapper.deleteById(id);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateStatus(Long id, Integer status) {
+        if (status == null || (status != 0 && status != 1)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "status must be 0 or 1");
+        }
+        KbKnowledge knowledge = kbKnowledgeMapper.selectById(id);
+        if (knowledge == null) {
+            throw new BusinessException(ErrorCode.KNOWLEDGE_NOT_FOUND);
+        }
+        knowledge.setStatus(status);
+        kbKnowledgeMapper.updateById(knowledge);
     }
 
     @Override
@@ -146,5 +166,68 @@ public class KnowledgeServiceImpl implements KnowledgeService {
                 .pageSize(s)
                 .pages(pages)
                 .build();
+    }
+
+    private String normalizeKnowledgeType(String type) {
+        if (!StringUtils.hasText(type)) {
+            return "TEXT_TXT";
+        }
+        String normalized = type.trim().toUpperCase();
+        if ("PDF".equals(normalized)) {
+            return "DOC_PDF";
+        }
+        if ("DOC".equals(normalized)) {
+            return "DOC_WORD";
+        }
+        if ("TEXT".equals(normalized)) {
+            return "TEXT_TXT";
+        }
+        if ("IMAGE".equals(normalized)
+                || "TEXT_TXT".equals(normalized)
+                || "TEXT_MD".equals(normalized)
+                || "DOC_PDF".equals(normalized)
+                || "DOC_WORD".equals(normalized)
+                || "DOC_PPT".equals(normalized)
+                || "DOC_EXCEL".equals(normalized)) {
+            return normalized;
+        }
+        return "TEXT_TXT";
+    }
+
+    private void createInitialTaskByKnowledgeContent(KbKnowledge knowledge) {
+        String text = StringUtils.hasText(knowledge.getContent())
+                ? knowledge.getContent()
+                : (StringUtils.hasText(knowledge.getSummary()) ? knowledge.getSummary() : "暂无内容");
+
+        byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+        String originalName = knowledge.getTitle() + "-正文.txt";
+        String fileType = "text_txt";
+        String minioPath = minioStorageService.buildPath(fileType, originalName);
+        minioStorageService.upload(bytes, minioPath, "text/plain");
+
+        KbFile file = new KbFile();
+        file.setKnowledgeId(knowledge.getId());
+        file.setOriginalName(originalName);
+        file.setFileType(fileType);
+        file.setFileSize((long) bytes.length);
+        file.setMinioPath(minioPath);
+        file.setFileHash(FileHashUtil.sha256(bytes));
+        file.setVersion(1);
+        file.setProcessStatus("SUCCESS");
+        file.setUploadedBy(SecurityUtil.getCurrentUserId());
+        kbFileMapper.insert(file);
+
+        com.beauty.knowledge.module.cms.domain.entity.ProcessTask task =
+                new com.beauty.knowledge.module.cms.domain.entity.ProcessTask();
+        task.setFileId(file.getId());
+        task.setTaskType("KNOWLEDGE_CREATE");
+        task.setStatus("SUCCESS");
+        task.setProgress(100);
+        task.setResultMsg("知识创建完成");
+        task.setRetryCount(0);
+        task.setMaxRetry(3);
+        task.setStartedAt(LocalDateTime.now());
+        task.setFinishedAt(LocalDateTime.now());
+        processTaskMapper.insert(task);
     }
 }
