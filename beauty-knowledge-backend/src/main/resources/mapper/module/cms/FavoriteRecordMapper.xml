@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.beauty.knowledge.module.cms.mapper.FavoriteRecordMapper">
+
+    <select id="pageFavorites" resultType="com.beauty.knowledge.module.cms.domain.vo.FavoriteKnowledgeVO">
+        SELECT k.id         AS knowledgeId,
+               k.title      AS title,
+               k.summary    AS summary,
+               k.type       AS type,
+               k.cover_url  AS coverUrl,
+               k.view_count AS viewCount,
+               f.created_at AS favoriteAt
+        FROM favorite_record f
+                 INNER JOIN kb_knowledge k ON k.id = f.knowledge_id
+        WHERE f.user_id = #{userId}
+          AND k.status = 1
+          AND k.is_deleted = 0
+        <if test="keyword != null and keyword != ''">
+          AND (k.title LIKE CONCAT('%', #{keyword}, '%')
+            OR k.summary LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        ORDER BY f.created_at DESC, f.id DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countFavorites" resultType="long">
+        SELECT COUNT(1)
+        FROM favorite_record f
+                 INNER JOIN kb_knowledge k ON k.id = f.knowledge_id
+        WHERE f.user_id = #{userId}
+          AND k.status = 1
+          AND k.is_deleted = 0
+        <if test="keyword != null and keyword != ''">
+          AND (k.title LIKE CONCAT('%', #{keyword}, '%')
+            OR k.summary LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+    </select>
+
+</mapper>

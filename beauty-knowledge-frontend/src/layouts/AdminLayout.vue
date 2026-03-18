@@ -3,12 +3,14 @@
     <aside class="side">
       <h2 class="title">管理后台</h2>
       <router-link to="/admin/overview">运营总览</router-link>
+      <router-link to="/admin/report">运营报表</router-link>
       <router-link to="/admin/knowledge/upload">文件上传</router-link>
       <router-link to="/admin/knowledge/list">知识列表</router-link>
       <router-link to="/admin/category/tree">分类树</router-link>
       <router-link to="/admin/entity/confirm">实体确认</router-link>
       <router-link to="/admin/task/monitor">任务监控</router-link>
       <router-link to="/admin/user/manage">用户管理</router-link>
+      <router-link to="/admin/system/notice">公告管理</router-link>
     </aside>
 
     <main class="main">

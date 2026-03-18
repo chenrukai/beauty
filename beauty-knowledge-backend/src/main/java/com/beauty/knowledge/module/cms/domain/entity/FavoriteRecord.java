@@ -8,22 +8,13 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("kb_file")
-public class KbFile {
+@TableName("favorite_record")
+public class FavoriteRecord {
 
     @TableId(type = IdType.AUTO)
     private Long id;
+    private Long userId;
     private Long knowledgeId;
-    private String originalName;
-    private String fileType;
-    private Long fileSize;
-    private String minioPath;
-    private String fileHash;
-    private Integer version;
-    private String processStatus;
-    private Integer isDeleted;
-    private Long parseCostMs;
-    private Long uploadedBy;
     private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
 }
+

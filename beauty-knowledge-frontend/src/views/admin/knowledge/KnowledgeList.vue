@@ -28,8 +28,9 @@
       </el-form-item>
       <el-form-item>
         <el-select v-model="status" clearable placeholder="状态筛选" style="width: 160px">
-          <el-option label="已发布" :value="1" />
           <el-option label="草稿" :value="0" />
+          <el-option label="已发布" :value="1" />
+          <el-option label="已下线" :value="2" />
         </el-select>
       </el-form-item>
       <el-form-item>
@@ -52,8 +53,8 @@
       </el-table-column>
       <el-table-column prop="status" label="状态" width="110">
         <template #default="{ row }">
-          <el-tag :type="Number(row.status) === 1 ? 'success' : 'info'">
-            {{ Number(row.status) === 1 ? '已发布' : '草稿' }}
+          <el-tag :type="statusTag(Number(row.status))">
+            {{ statusText(Number(row.status)) }}
           </el-tag>
         </template>
       </el-table-column>
@@ -70,12 +71,20 @@
             发布
           </el-button>
           <el-button
-            v-else
+            v-if="Number(row.status) === 1"
             link
             type="warning"
-            @click="changeStatus(row.id, 0, row.title)"
+            @click="changeStatus(row.id, 2, row.title)"
           >
-            撤回
+            下线
+          </el-button>
+          <el-button
+            v-if="Number(row.status) === 2"
+            link
+            type="primary"
+            @click="changeStatus(row.id, 1, row.title)"
+          >
+            重新发布
           </el-button>
           <el-button link type="danger" @click="removeKnowledge(row.id, row.title)">删除</el-button>
         </template>
@@ -99,7 +108,7 @@
       <el-descriptions :column="1" border>
         <el-descriptions-item label="标题">{{ detail.title }}</el-descriptions-item>
         <el-descriptions-item label="类型">{{ normalizeType(detail.type) }}</el-descriptions-item>
-        <el-descriptions-item label="状态">{{ Number(detail.status) === 1 ? '已发布' : '草稿' }}</el-descriptions-item>
+        <el-descriptions-item label="状态">{{ statusText(Number(detail.status)) }}</el-descriptions-item>
         <el-descriptions-item label="摘要">{{ detail.summary || '-' }}</el-descriptions-item>
       </el-descriptions>
       <el-divider />
@@ -147,8 +156,9 @@
 
       <el-form-item label="状态">
         <el-radio-group v-model="createForm.status">
-          <el-radio :label="1">已发布</el-radio>
           <el-radio :label="0">草稿</el-radio>
+          <el-radio :label="1">已发布</el-radio>
+          <el-radio :label="2">已下线</el-radio>
         </el-radio-group>
       </el-form-item>
 
@@ -203,7 +213,7 @@ const createForm = ref({
   categoryId: undefined as number | undefined,
   type: 'TEXT_TXT',
   content: '',
-  status: 1
+  status: 0
 })
 const createRules = {
   title: [{ required: true, message: '请输入标题', trigger: 'blur' }],
@@ -302,8 +312,8 @@ async function removeKnowledge(id: number, title: string) {
   }
 }
 
-async function changeStatus(id: number, status: 0 | 1, title: string) {
-  const action = status === 1 ? '发布' : '撤回'
+async function changeStatus(id: number, status: 0 | 1 | 2, title: string) {
+  const action = status === 1 ? '发布' : status === 2 ? '下线' : '撤回为草稿'
   try {
     await ElMessageBox.confirm(`确认${action}知识《${title}》吗？`, '状态确认', {
       type: 'warning',
@@ -323,6 +333,19 @@ async function changeStatus(id: number, status: 0 | 1, title: string) {
   }
 }
 
+function statusText(status: number) {
+  if (status === 0) return '草稿'
+  if (status === 1) return '已发布'
+  if (status === 2) return '已下线'
+  return '未知'
+}
+
+function statusTag(status: number) {
+  if (status === 1) return 'success'
+  if (status === 2) return 'warning'
+  return 'info'
+}
+
 function openCreate() {
   createForm.value = {
     title: '',
@@ -330,7 +353,7 @@ function openCreate() {
     categoryId: flatCategories.value[0]?.id,
     type: 'TEXT_TXT',
     content: '',
-    status: 1
+    status: 0
   }
   createVisible.value = true
 }

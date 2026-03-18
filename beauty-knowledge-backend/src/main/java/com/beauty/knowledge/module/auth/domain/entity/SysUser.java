@@ -31,4 +31,8 @@ public class SysUser {
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
+
+    private LocalDateTime lastLoginAt;
+
+    private String lastLoginIp;
 }

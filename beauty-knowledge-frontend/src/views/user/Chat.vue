@@ -8,6 +8,7 @@
             <el-button type="primary" plain @click="newSession">新会话</el-button>
           </div>
         </template>
+
         <div class="metrics">
           <div class="metric">
             <span>会话数</span>
@@ -18,7 +19,8 @@
             <strong>{{ chat.messages.length }}</strong>
           </div>
         </div>
-        <el-scrollbar height="calc(100vh - 480px)">
+
+        <el-scrollbar height="calc(100vh - 520px)">
           <div
             v-for="s in pagedSessions"
             :key="s.id"
@@ -30,6 +32,7 @@
             <el-button text type="danger" size="small" @click.stop="removeSession(s.id)">删除</el-button>
           </div>
         </el-scrollbar>
+
         <div class="pager-mini" v-if="chat.sessionList.length > sessionPageSize">
           <el-pagination
             small
@@ -38,6 +41,47 @@
             :total="chat.sessionList.length"
             :page-size="sessionPageSize"
             v-model:current-page="sessionPageNum"
+          />
+        </div>
+      </el-card>
+
+      <el-card shadow="never" class="panel">
+        <template #header>
+          <strong>我的收藏</strong>
+        </template>
+        <el-input
+          v-model="favoriteKeyword"
+          placeholder="搜索收藏标题"
+          clearable
+          size="small"
+          class="favorite-search"
+          @change="fetchFavorites(1)"
+          @keyup.enter="fetchFavorites(1)"
+        />
+        <div v-if="favoriteList.length" class="favorite-list">
+          <div v-for="f in favoriteList" :key="f.knowledgeId" class="favorite-item">
+            <div class="fav-title">{{ f.title }}</div>
+            <div class="fav-actions">
+              <el-button size="small" type="info" plain @click="openKnowledge(Number(f.knowledgeId), 'favorite')">
+                查看
+              </el-button>
+              <el-button size="small" type="danger" plain @click="unfavoriteFromList(Number(f.knowledgeId))">
+                取消收藏
+              </el-button>
+            </div>
+            <div class="fav-meta">{{ f.type }} · 浏览 {{ f.viewCount || 0 }}</div>
+          </div>
+        </div>
+        <el-empty v-else description="暂无收藏" :image-size="60" />
+        <div class="pager-mini" v-if="favoriteTotal > favoritePageSize">
+          <el-pagination
+            small
+            background
+            layout="prev, pager, next"
+            :total="favoriteTotal"
+            :page-size="favoritePageSize"
+            v-model:current-page="favoritePageNum"
+            @current-change="fetchFavorites"
           />
         </div>
       </el-card>
@@ -55,9 +99,21 @@
     </aside>
 
     <section class="right">
+      <el-alert
+        v-if="noticeList.length"
+        type="info"
+        :closable="false"
+        class="notice"
+        :title="`公告：${noticeList[0].title}`"
+      >
+        <template #default>
+          <div class="notice-content">{{ noticeList[0].content }}</div>
+        </template>
+      </el-alert>
+
       <el-card shadow="never" class="welcome">
         <h3>今天想了解什么？</h3>
-        <p>你可以先点左侧快速提问，也可以直接输入护肤成分、肤质问题或产品对比需求。</p>
+        <p>你可以先点击左侧快速提问，也可以直接输入护肤成分、肤质问题或产品对比需求。</p>
         <div class="tips">
           <span>提问建议：成分 + 肤质 + 使用场景</span>
           <span>例如：油敏肌晚间怎么用烟酰胺？</span>
@@ -75,7 +131,7 @@
         </template>
         <div v-else class="empty-state">
           <h4>还没有对话内容</h4>
-          <p>点击下方推荐问题即可开始，或在输入框中直接提问。</p>
+          <p>点击下方推荐问题即可开始，或直接输入你的问题。</p>
           <div class="empty-actions">
             <el-button v-for="q in quickQuestions.slice(0, 3)" :key="`empty-${q}`" @click="askQuick(q)">
               {{ q }}
@@ -97,10 +153,23 @@
         <div v-else-if="recommendList.length" class="recommend-grid">
           <div v-for="item in recommendList" :key="item.id" class="recommend-item">
             <h4>{{ item.title }}</h4>
-            <p>{{ item.content }}</p>
+            <div class="recommend-meta">浏览 {{ item.viewCount || 0 }}</div>
+            <div class="recommend-content">{{ item.content }}</div>
+            <div class="recommend-actions">
+              <el-button size="small" type="info" plain @click="openKnowledge(item.id)">查看详情</el-button>
+              <el-button size="small" @click="askQuick(`请解释：${item.title}`)">去提问</el-button>
+              <el-button
+                size="small"
+                :type="favoriteSet.has(item.id) ? 'danger' : 'primary'"
+                plain
+                @click="toggleFavorite(item.id)"
+              >
+                {{ favoriteSet.has(item.id) ? '取消收藏' : '收藏' }}
+              </el-button>
+            </div>
           </div>
         </div>
-        <div v-else class="recommend-empty">暂无知识数据，先让管理员在知识列表新增内容。</div>
+        <div v-else class="recommend-empty">暂无知识数据</div>
         <div class="pager-recommend" v-if="recommendTotal > recommendPageSize">
           <el-pagination
             background
@@ -114,6 +183,14 @@
       </el-card>
     </section>
   </div>
+
+  <el-dialog v-model="knowledgeDialogVisible" title="知识详情" width="760px" destroy-on-close>
+    <template v-if="knowledgeDetail">
+      <h3 style="margin-top: 0">{{ knowledgeDetail.title }}</h3>
+      <p class="dialog-summary">{{ knowledgeDetail.summary || '暂无摘要' }}</p>
+      <div class="dialog-content">{{ knowledgeDetail.content || '暂无正文' }}</div>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
@@ -129,6 +206,7 @@ interface RecommendItem {
   id: number
   title: string
   content: string
+  viewCount: number
 }
 
 const chat = useChatStore()
@@ -138,6 +216,15 @@ const recommendList = ref<RecommendItem[]>([])
 const recommendPageNum = ref(1)
 const recommendPageSize = 6
 const recommendTotal = ref(0)
+const noticeList = ref<any[]>([])
+const favoriteList = ref<any[]>([])
+const favoriteKeyword = ref('')
+const favoritePageNum = ref(1)
+const favoritePageSize = 5
+const favoriteTotal = ref(0)
+const favoriteSet = ref<Set<number>>(new Set())
+const knowledgeDialogVisible = ref(false)
+const knowledgeDetail = ref<any>(null)
 
 const sessionPageNum = ref(1)
 const sessionPageSize = 8
@@ -156,17 +243,36 @@ const quickQuestions = [
 ]
 
 onMounted(async () => {
-  await Promise.allSettled([chat.fetchSessions(), fetchRecommend(1)])
+  await Promise.allSettled([chat.fetchSessions(), fetchRecommend(1), fetchNotices(), fetchFavorites()])
 })
 
-function normalizeDisplayText(raw: any, fallback: string) {
-  const text = String(raw || '').trim()
-  if (!text) return fallback
-  const markers = ['??', '�', '锟', 'Ã', 'E2E??']
-  if (markers.some((m) => text.includes(m))) {
-    return fallback
+async function fetchNotices() {
+  try {
+    const res = await request.get('/notice/list', { params: { size: 3 } })
+    noticeList.value = res.data || []
+  } catch {
+    noticeList.value = []
   }
-  return text
+}
+
+async function fetchFavorites(page = favoritePageNum.value) {
+  favoritePageNum.value = Number(page || 1)
+  try {
+    const res = await request.get('/user/favorite/page', {
+      params: {
+        pageNum: favoritePageNum.value,
+        pageSize: favoritePageSize,
+        keyword: favoriteKeyword.value || undefined
+      }
+    })
+    favoriteList.value = res.data?.records || []
+    favoriteTotal.value = Number(res.data?.total || 0)
+    favoriteSet.value = new Set(favoriteList.value.map((it: any) => Number(it.knowledgeId)))
+  } catch {
+    favoriteList.value = []
+    favoriteTotal.value = 0
+    favoriteSet.value = new Set()
+  }
 }
 
 async function fetchRecommend(page = recommendPageNum.value) {
@@ -177,13 +283,15 @@ async function fetchRecommend(page = recommendPageNum.value) {
       params: {
         pageNum: recommendPageNum.value,
         pageSize: recommendPageSize,
-        status: 1
+        status: 1,
+        sortBy: 'hot'
       }
     })
     recommendList.value = (res.data?.records || []).map((item: any) => ({
       id: item.id,
-      title: normalizeDisplayText(item.title, `知识 #${item.id}`),
-      content: normalizeDisplayText(String(item.content || '').slice(0, 90), '内容编码异常，请联系管理员重新导入知识。')
+      title: String(item.title || `知识 #${item.id}`),
+      content: toTeaser(item.content || item.summary || '', 15),
+      viewCount: Number(item.viewCount || 0)
     }))
     recommendTotal.value = Number(res.data?.total || 0)
   } catch {
@@ -194,9 +302,16 @@ async function fetchRecommend(page = recommendPageNum.value) {
   }
 }
 
+function toTeaser(text: string, limit = 15) {
+  const chars = Array.from(String(text || ''))
+  if (chars.length <= limit) return chars.join('')
+  return `${chars.slice(0, limit).join('')}...`
+}
+
 async function ask() {
   const q = question.value.trim()
   if (!q) return
+  await recordAction('search', { keyword: q, targetType: 'knowledge', source: 'search' })
   await chat.streamAsk(q)
   question.value = ''
 }
@@ -230,6 +345,65 @@ async function removeSession(id: number) {
     }
   } catch (e: any) {
     ElMessage.error(e?.message || '删除会话失败')
+  }
+}
+
+async function toggleFavorite(knowledgeId: number) {
+  try {
+    if (favoriteSet.value.has(knowledgeId)) {
+      await request.delete(`/user/favorite/${knowledgeId}`)
+      favoriteSet.value.delete(knowledgeId)
+      ElMessage.success('已取消收藏')
+    } else {
+      await request.post(`/user/favorite/${knowledgeId}`)
+      favoriteSet.value.add(knowledgeId)
+      ElMessage.success('已收藏')
+      await recordAction('favorite', { targetType: 'knowledge', targetId: knowledgeId })
+    }
+    await fetchFavorites(favoritePageNum.value)
+  } catch (e: any) {
+    ElMessage.error(e?.message || '操作失败')
+  }
+}
+
+async function unfavoriteFromList(knowledgeId: number) {
+  try {
+    await request.delete(`/user/favorite/${knowledgeId}`)
+    favoriteSet.value.delete(knowledgeId)
+    await fetchFavorites(favoritePageNum.value)
+    ElMessage.success('已取消收藏')
+  } catch (e: any) {
+    ElMessage.error(e?.message || '取消收藏失败')
+  }
+}
+
+async function openKnowledge(knowledgeId: number, source: 'recommend' | 'favorite' = 'recommend') {
+  try {
+    const res = await request.get(`/knowledge/${knowledgeId}`)
+    const data = res.data || {}
+    knowledgeDetail.value = data.knowledge || null
+    const idx = recommendList.value.findIndex((it) => it.id === knowledgeId)
+    if (idx >= 0) {
+      recommendList.value[idx].viewCount = Number(recommendList.value[idx].viewCount || 0) + 1
+    }
+    knowledgeDialogVisible.value = true
+    await recordAction('click', { targetType: 'knowledge', targetId: knowledgeId, source })
+    await recordAction('browse', { targetType: 'knowledge', targetId: knowledgeId, source })
+    await fetchFavorites()
+    await fetchRecommend(recommendPageNum.value)
+  } catch (e: any) {
+    ElMessage.error(e?.message || '加载知识详情失败')
+  }
+}
+
+async function recordAction(actionType: string, payload: any = {}) {
+  try {
+    await request.post('/user/action', {
+      actionType,
+      ...payload
+    })
+  } catch {
+    // do not block user flow
   }
 }
 </script>
@@ -323,10 +497,50 @@ async function removeSession(id: number) {
   margin: 0;
 }
 
+.favorite-search {
+  margin-bottom: 8px;
+}
+
+.favorite-list {
+  display: grid;
+  gap: 8px;
+}
+
+.favorite-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 8px;
+}
+
+.fav-title {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.fav-meta {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.fav-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
 .right {
   display: grid;
-  grid-template-rows: auto 1fr auto auto;
+  grid-template-rows: auto auto 1fr auto auto;
   gap: 12px;
+}
+
+.notice {
+  margin-bottom: 0;
+}
+
+.notice-content {
+  white-space: pre-wrap;
 }
 
 .welcome h3 {
@@ -424,10 +638,36 @@ async function removeSession(id: number) {
   font-size: 14px;
 }
 
-.recommend-item p {
+.recommend-meta {
+  margin-bottom: 6px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.recommend-content {
   margin: 0;
   color: #475569;
   line-height: 1.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recommend-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+.dialog-summary {
+  color: #64748b;
+  margin-bottom: 10px;
+}
+
+.dialog-content {
+  white-space: pre-wrap;
+  line-height: 1.8;
+  color: #334155;
 }
 
 .pager-recommend {
@@ -448,7 +688,7 @@ async function removeSession(id: number) {
   }
 
   .right {
-    grid-template-rows: auto 1fr auto auto;
+    grid-template-rows: auto auto 1fr auto auto;
   }
 
   .recommend-grid {

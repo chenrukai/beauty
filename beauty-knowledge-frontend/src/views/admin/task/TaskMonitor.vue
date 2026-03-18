@@ -15,7 +15,7 @@
 
     <el-descriptions v-if="task" :column="2" border style="margin-bottom: 12px">
       <el-descriptions-item label="状态">
-        <el-tag :type="taskStatusType(task.status)">{{ task.status }}</el-tag>
+        <el-tag :type="taskStatusType(task.status)">{{ taskStatusText(task.status) }}</el-tag>
       </el-descriptions-item>
       <el-descriptions-item label="类型">{{ taskTypeText(task.taskType) }}</el-descriptions-item>
       <el-descriptions-item label="文件名">{{ task.fileName || '-' }}</el-descriptions-item>
@@ -46,7 +46,7 @@
       </el-table-column>
       <el-table-column label="状态" width="120">
         <template #default="{ row }">
-          <el-tag :type="taskStatusType(row.status)">{{ row.status }}</el-tag>
+          <el-tag :type="taskStatusType(row.status)">{{ taskStatusText(row.status) }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="进度" width="160">
@@ -99,6 +99,15 @@ function taskStatusType(status?: string) {
   if (s.includes('FAIL')) return 'danger'
   if (s.includes('PROCESS') || s.includes('RUN') || s.includes('PENDING')) return 'warning'
   return 'info'
+}
+
+function taskStatusText(status?: string) {
+  const s = (status || '').toUpperCase()
+  if (s.includes('SUCCESS')) return '成功'
+  if (s.includes('FAIL') || s.includes('ERROR')) return '失败'
+  if (s.includes('PROCESS') || s.includes('RUN')) return '处理中'
+  if (s.includes('PENDING')) return '待处理'
+  return status || '-'
 }
 
 function toPercent(progress?: number) {

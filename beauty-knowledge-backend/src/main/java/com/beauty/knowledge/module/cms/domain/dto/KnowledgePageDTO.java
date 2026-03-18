@@ -11,4 +11,8 @@ public class KnowledgePageDTO {
     private Long categoryId;
     private Integer status;
     private String type;
+    /**
+     * 排序方式：latest/hot
+     */
+    private String sortBy;
 }

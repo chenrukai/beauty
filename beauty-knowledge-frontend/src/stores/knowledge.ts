@@ -43,7 +43,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     await request.delete(`/knowledge/${id}`)
   }
 
-  async function updateKnowledgeStatus(id: number, status: 0 | 1) {
+  async function updateKnowledgeStatus(id: number, status: number) {
     await request.put(`/knowledge/${id}/status`, null, { params: { status } })
   }
 

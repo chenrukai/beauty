@@ -1,4 +1,4 @@
-package com.beauty.knowledge.module.cms.domain.entity;
+package com.beauty.knowledge.module.system.domain.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -8,23 +8,19 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("kb_knowledge")
-public class KbKnowledge {
+@TableName("sys_notice")
+public class SysNotice {
 
     @TableId(type = IdType.AUTO)
     private Long id;
     private String title;
-    private String summary;
     private String content;
-    private Long categoryId;
-    private String type;
-    private String coverUrl;
+    private Integer isTop;
     private Integer status;
-    private LocalDateTime publishAt;
-    private LocalDateTime offlineAt;
-    private Integer isDeleted;
-    private Integer viewCount;
-    private Long authorId;
+    private LocalDateTime publishTime;
+    private LocalDateTime expireTime;
+    private Long createdBy;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }
+

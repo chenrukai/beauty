@@ -20,6 +20,8 @@ public class ProcessTask {
     private String resultMsg;
     private Integer retryCount;
     private Integer maxRetry;
+    private Long operatorId;
+    private Long costMs;
     private LocalDateTime startedAt;
     private LocalDateTime finishedAt;
     private LocalDateTime createdAt;

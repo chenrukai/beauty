@@ -48,18 +48,33 @@ public class KnowledgeServiceImpl implements KnowledgeService {
                 .eq(dto.getCategoryId() != null, KbKnowledge::getCategoryId, dto.getCategoryId())
                 .eq(dto.getStatus() != null, KbKnowledge::getStatus, dto.getStatus())
                 .eq(StringUtils.hasText(dto.getType()), KbKnowledge::getType, dto.getType())
-                .orderByDesc(KbKnowledge::getId);
+                .eq(KbKnowledge::getIsDeleted, 0);
+        boolean hotSort = "hot".equalsIgnoreCase(dto.getSortBy());
+        if (hotSort) {
+            wrapper.orderByDesc(KbKnowledge::getViewCount)
+                    .orderByDesc(KbKnowledge::getPublishAt)
+                    .orderByDesc(KbKnowledge::getId);
+        } else {
+            wrapper.orderByDesc(KbKnowledge::getPublishAt)
+                    .orderByDesc(KbKnowledge::getId);
+        }
         return PageResult.of(kbKnowledgeMapper.selectPage(page, wrapper));
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public KnowledgeDetailVO getById(Long id) {
         KbKnowledge knowledge = kbKnowledgeMapper.selectById(id);
-        if (knowledge == null) {
+        if (knowledge == null || (knowledge.getIsDeleted() != null && knowledge.getIsDeleted() == 1)) {
             throw new BusinessException(ErrorCode.KNOWLEDGE_NOT_FOUND);
         }
+        int viewCount = knowledge.getViewCount() == null ? 0 : knowledge.getViewCount();
+        knowledge.setViewCount(viewCount + 1);
+        kbKnowledgeMapper.updateById(knowledge);
+
         List<KbFile> files = kbFileMapper.selectList(new LambdaQueryWrapper<KbFile>()
                 .eq(KbFile::getKnowledgeId, id)
+                .eq(KbFile::getIsDeleted, 0)
                 .orderByDesc(KbFile::getId));
         return KnowledgeDetailVO.builder().knowledge(knowledge).files(files).build();
     }
@@ -73,8 +88,15 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         knowledge.setCategoryId(dto.getCategoryId());
         knowledge.setType(normalizeKnowledgeType(dto.getType()));
         knowledge.setContent(dto.getContent());
-        knowledge.setStatus(dto.getStatus() == null ? 1 : dto.getStatus());
+        knowledge.setStatus(dto.getStatus() == null ? 0 : dto.getStatus());
+        if (knowledge.getStatus() != null && knowledge.getStatus() == 1) {
+            knowledge.setPublishAt(LocalDateTime.now());
+            knowledge.setOfflineAt(null);
+        } else if (knowledge.getStatus() != null && knowledge.getStatus() == 2) {
+            knowledge.setOfflineAt(LocalDateTime.now());
+        }
         knowledge.setCoverUrl(dto.getCoverUrl());
+        knowledge.setIsDeleted(0);
         knowledge.setViewCount(0);
         knowledge.setAuthorId(SecurityUtil.getCurrentUserId());
         kbKnowledgeMapper.insert(knowledge);
@@ -85,7 +107,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
     @Transactional(rollbackFor = Exception.class)
     public void update(Long id, KnowledgeSaveDTO dto) {
         KbKnowledge knowledge = kbKnowledgeMapper.selectById(id);
-        if (knowledge == null) {
+        if (knowledge == null || (knowledge.getIsDeleted() != null && knowledge.getIsDeleted() == 1)) {
             throw new BusinessException(ErrorCode.KNOWLEDGE_NOT_FOUND);
         }
         knowledge.setTitle(dto.getTitle());
@@ -93,7 +115,13 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         knowledge.setCategoryId(dto.getCategoryId());
         knowledge.setType(normalizeKnowledgeType(dto.getType()));
         knowledge.setContent(dto.getContent());
-        knowledge.setStatus(dto.getStatus() == null ? 1 : dto.getStatus());
+        knowledge.setStatus(dto.getStatus() == null ? 0 : dto.getStatus());
+        if (knowledge.getStatus() != null && knowledge.getStatus() == 1) {
+            knowledge.setPublishAt(LocalDateTime.now());
+            knowledge.setOfflineAt(null);
+        } else if (knowledge.getStatus() != null && knowledge.getStatus() == 2) {
+            knowledge.setOfflineAt(LocalDateTime.now());
+        }
         knowledge.setCoverUrl(dto.getCoverUrl());
         kbKnowledgeMapper.updateById(knowledge);
     }
@@ -102,7 +130,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
     @Transactional(rollbackFor = Exception.class)
     public void remove(Long id) {
         KbKnowledge knowledge = kbKnowledgeMapper.selectById(id);
-        if (knowledge == null) {
+        if (knowledge == null || (knowledge.getIsDeleted() != null && knowledge.getIsDeleted() == 1)) {
             throw new BusinessException(ErrorCode.KNOWLEDGE_NOT_FOUND);
         }
 
@@ -113,23 +141,34 @@ public class KnowledgeServiceImpl implements KnowledgeService {
             if (StringUtils.hasText(file.getMinioPath())) {
                 minioStorageService.remove(file.getMinioPath());
             }
-            kbFileMapper.deleteById(file.getId());
+            file.setIsDeleted(1);
+            kbFileMapper.updateById(file);
         }
 
-        kbKnowledgeMapper.deleteById(id);
+        knowledge.setIsDeleted(1);
+        kbKnowledgeMapper.updateById(knowledge);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void updateStatus(Long id, Integer status) {
-        if (status == null || (status != 0 && status != 1)) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "status must be 0 or 1");
+        if (status == null || (status != 0 && status != 1 && status != 2)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "status must be 0/1/2");
         }
         KbKnowledge knowledge = kbKnowledgeMapper.selectById(id);
-        if (knowledge == null) {
+        if (knowledge == null || (knowledge.getIsDeleted() != null && knowledge.getIsDeleted() == 1)) {
             throw new BusinessException(ErrorCode.KNOWLEDGE_NOT_FOUND);
         }
         knowledge.setStatus(status);
+        if (status == 1) {
+            if (!StringUtils.hasText(knowledge.getContent()) && !StringUtils.hasText(knowledge.getSummary())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "cannot publish empty knowledge");
+            }
+            knowledge.setPublishAt(LocalDateTime.now());
+            knowledge.setOfflineAt(null);
+        } else if (status == 2) {
+            knowledge.setOfflineAt(LocalDateTime.now());
+        }
         kbKnowledgeMapper.updateById(knowledge);
     }
 
@@ -152,6 +191,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
             Page<KbKnowledge> fallbackPage = new Page<>(p, s);
             LambdaQueryWrapper<KbKnowledge> wrapper = new LambdaQueryWrapper<>();
             wrapper.eq(KbKnowledge::getStatus, 1)
+                    .eq(KbKnowledge::getIsDeleted, 0)
                     .and(w -> w.like(KbKnowledge::getTitle, keyword).or().like(KbKnowledge::getContent, keyword))
                     .orderByDesc(KbKnowledge::getId);
             Page<KbKnowledge> pg = kbKnowledgeMapper.selectPage(fallbackPage, wrapper);

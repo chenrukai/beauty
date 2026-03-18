@@ -11,6 +11,8 @@ import CategoryTreePage from '../views/admin/category/CategoryTree.vue'
 import ExtractConfirmPage from '../views/admin/entity/ExtractConfirm.vue'
 import TaskMonitorPage from '../views/admin/task/TaskMonitor.vue'
 import UserManagePage from '../views/admin/user/UserManage.vue'
+import NoticeManagePage from '../views/admin/system/NoticeManage.vue'
+import AdminReportPage from '../views/admin/Report.vue'
 
 const routes: RouteRecordRaw[] = [
   { path: '/login', component: LoginPage, meta: { requiresAuth: false } },
@@ -20,12 +22,14 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, role: 'admin' },
     children: [
       { path: 'overview', component: AdminOverviewPage },
+      { path: 'report', component: AdminReportPage },
       { path: 'knowledge/upload', component: FileUploadPage },
       { path: 'knowledge/list', component: KnowledgeListPage },
       { path: 'category/tree', component: CategoryTreePage },
       { path: 'entity/confirm', component: ExtractConfirmPage },
       { path: 'task/monitor', component: TaskMonitorPage },
       { path: 'user/manage', component: UserManagePage },
+      { path: 'system/notice', component: NoticeManagePage },
       { path: '', redirect: '/admin/overview' }
     ]
   },
