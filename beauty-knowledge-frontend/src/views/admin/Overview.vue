@@ -188,8 +188,8 @@ function statusTagType(status?: string) {
 
 function taskTypeText(taskType?: string) {
   const t = (taskType || '').toUpperCase()
-  if (t === 'KNOWLEDGE_CREATE') return '知识创建'
-  if (t === 'KNOWLEDGE_PROCESS') return '文件处理'
+  if (t === 'KNOWLEDGE_CREATE') return '创建知识'
+  if (t === 'KNOWLEDGE_PROCESS') return '处理文件'
   return taskType || '-'
 }
 
@@ -263,3 +263,4 @@ function sourceText(source?: string) {
   margin-bottom: 4px;
 }
 </style>
+

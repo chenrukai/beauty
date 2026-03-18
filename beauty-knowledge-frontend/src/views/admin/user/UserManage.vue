@@ -4,7 +4,7 @@
       <template #header>
         <div class="head">
           <strong>用户管理</strong>
-          <span>仅管理员可操作。支持启用/禁用，以及普通用户与管理员角色切换。</span>
+          <span>仅管理员可操作。支持启用/禁用与普通用户、管理员角色切换。</span>
         </div>
       </template>
 
@@ -48,39 +48,13 @@
         <el-table-column prop="createdAt" label="创建时间" min-width="180" />
         <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
-            <el-button
-              v-if="row.status === 1"
-              type="danger"
-              link
-              @click="setStatus(row, 0)"
-            >
-              禁用
-            </el-button>
-            <el-button
-              v-else
-              type="success"
-              link
-              @click="setStatus(row, 1)"
-            >
-              启用
-            </el-button>
+            <el-button v-if="row.status === 1" type="danger" link @click="setStatus(row, 0)">禁用</el-button>
+            <el-button v-else type="success" link @click="setStatus(row, 1)">启用</el-button>
 
-            <el-button
-              v-if="row.role === 'user'"
-              type="warning"
-              link
-              @click="setRole(row, 'admin')"
-            >
+            <el-button v-if="row.role === 'user'" type="warning" link @click="setRole(row, 'admin')">
               设为管理员
             </el-button>
-            <el-button
-              v-else
-              type="primary"
-              link
-              @click="setRole(row, 'user')"
-            >
-              设为普通用户
-            </el-button>
+            <el-button v-else type="primary" link @click="setRole(row, 'user')">设为普通用户</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -238,3 +212,4 @@ async function setRole(row: UserRow, role: 'admin' | 'user') {
   justify-content: flex-end;
 }
 </style>
+

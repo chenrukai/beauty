@@ -2,11 +2,11 @@
   <div class="login-page">
     <section class="hero-panel">
       <div class="hero-copy">
-        <p class="eyebrow">Beauty Knowledge Console</p>
+        <p class="eyebrow">美业知识控制台</p>
         <h1>把门店知识、产品理解和用户问答放进一个更顺手的工作台。</h1>
         <p class="intro">
-          面向真实用户的登录入口，应该清楚、克制，也要让人愿意继续用下去。
-          这里保留管理员与普通用户两种流转，但注册入口只开放普通用户。
+          面向真实业务场景的登录入口，应该清晰、克制，也要让人愿意继续使用。
+          当前支持管理员与普通用户两种入口，注册仅开放普通用户。
         </p>
       </div>
 
@@ -16,11 +16,11 @@
           <strong>门店咨询 / 培训 / 知识问答</strong>
         </div>
         <div class="metric-card">
-          <span class="metric-label">当前账号策略</span>
+          <span class="metric-label">账号策略</span>
           <strong>仅注册普通用户</strong>
         </div>
         <div class="metric-card">
-          <span class="metric-label">推荐体验</span>
+          <span class="metric-label">推荐路径</span>
           <strong>先登录，再进入用户问答台</strong>
         </div>
       </div>
@@ -31,7 +31,7 @@
         <p class="panel-kicker">{{ isRegister ? '创建普通用户账号' : '欢迎回来' }}</p>
         <h2>{{ isRegister ? '注册后即可登录使用' : '登录 AI 美业知识台' }}</h2>
         <p class="panel-note">
-          {{ isRegister ? '注册不会创建管理员权限，也不需要填写昵称。' : '请使用你的业务账号登录。' }}
+          {{ isRegister ? '注册不会创建管理员权限，也不需要填写昵称。' : '请使用你的账号和密码登录。' }}
         </p>
       </div>
 
@@ -260,91 +260,80 @@ h1 {
   padding: 36px;
   align-self: center;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 243, 232, 0.96)),
-    #fff;
+    radial-gradient(circle at top right, rgba(15, 118, 110, 0.08), transparent 32%),
+    linear-gradient(180deg, #fffdf8 0%, #f8f4ea 100%);
 }
 
 .panel-head h2 {
-  margin: 10px 0 8px;
-  font-size: 30px;
-  line-height: 1.15;
-  color: #173f39;
+  margin: 8px 0 8px;
+  font-size: 44px;
+  line-height: 1.12;
+  color: #0f4741;
+  letter-spacing: -0.04em;
 }
 
 .panel-kicker {
-  color: #8b5e34;
+  color: #9a7d4f;
 }
 
 .panel-note {
   margin: 0;
-  color: #5f6c69;
-  line-height: 1.7;
+  color: #47625f;
+  line-height: 1.8;
+  font-size: 16px;
 }
 
 .auth-form {
-  margin-top: 28px;
+  margin-top: 24px;
 }
 
 .auth-form :deep(.el-input__wrapper) {
-  min-height: 50px;
-  border-radius: 16px;
-  box-shadow: 0 0 0 1px rgba(18, 75, 67, 0.08) inset;
+  border-radius: 18px;
+  padding: 10px 16px;
+  box-shadow: 0 0 0 1px rgba(15, 71, 65, 0.1) inset;
 }
 
 .primary-btn {
   width: 100%;
-  min-height: 50px;
-  margin-top: 6px;
+  margin-top: 8px;
+  height: 62px;
+  border-radius: 20px;
+  font-size: 31px;
+  letter-spacing: 0.05em;
+  background: linear-gradient(135deg, #0f766e 0%, #2f8f82 100%);
   border: none;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #0f766e, #1f9a8f);
-  box-shadow: 0 16px 32px rgba(15, 118, 110, 0.24);
-}
-
-.primary-btn:hover {
-  background: linear-gradient(135deg, #116d66, #22897f);
 }
 
 .switch-row {
-  margin-top: 20px;
+  margin-top: 22px;
   display: flex;
-  align-items: center;
   justify-content: center;
   gap: 8px;
-  color: #5f6c69;
+  color: #5f726f;
+  font-size: 26px;
 }
 
 .mode-switch {
-  padding: 0;
   border: none;
   background: transparent;
   color: #0f766e;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
+  font-size: 26px;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 1180px) {
   .login-page {
     grid-template-columns: 1fr;
     padding: 18px;
   }
 
-  .hero-panel,
-  .auth-panel {
-    border-radius: 24px;
-  }
-
   .hero-panel {
-    padding: 32px 24px;
+    min-height: 360px;
   }
 
   .hero-metrics {
     grid-template-columns: 1fr;
-    margin-top: 28px;
-  }
-
-  .auth-panel {
-    padding: 28px 22px;
   }
 }
 </style>

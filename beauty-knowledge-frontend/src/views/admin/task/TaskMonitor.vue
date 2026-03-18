@@ -59,14 +59,7 @@
       <el-table-column label="操作" width="150" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="pickTask(row.id)">查看</el-button>
-          <el-button
-            v-if="canRetry(row.status)"
-            link
-            type="warning"
-            @click="retryTask(row.id)"
-          >
-            重试
-          </el-button>
+          <el-button v-if="canRetry(row.status)" link type="warning" @click="retryTask(row.id)">重试</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -96,7 +89,7 @@ onUnmounted(() => {
 function taskStatusType(status?: string) {
   const s = (status || '').toUpperCase()
   if (s.includes('SUCCESS')) return 'success'
-  if (s.includes('FAIL')) return 'danger'
+  if (s.includes('FAIL') || s.includes('ERROR')) return 'danger'
   if (s.includes('PROCESS') || s.includes('RUN') || s.includes('PENDING')) return 'warning'
   return 'info'
 }
@@ -122,8 +115,8 @@ function canRetry(status?: string) {
 
 function taskTypeText(taskType?: string) {
   const t = (taskType || '').toUpperCase()
-  if (t === 'KNOWLEDGE_CREATE') return '知识创建'
-  if (t === 'KNOWLEDGE_PROCESS') return '文件处理'
+  if (t === 'KNOWLEDGE_CREATE') return '创建知识'
+  if (t === 'KNOWLEDGE_PROCESS') return '处理文件'
   return taskType || '-'
 }
 
@@ -185,3 +178,4 @@ function toggleAutoRefresh() {
   }
 }
 </script>
+
