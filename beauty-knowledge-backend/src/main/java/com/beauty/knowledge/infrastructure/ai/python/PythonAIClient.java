@@ -14,12 +14,16 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.zip.CRC32;
 
 @Slf4j
 @Component
@@ -44,6 +48,15 @@ public class PythonAIClient {
     @Value("${beauty.pipeline.embed-batch-size:32}")
     private int embedBatchSize;
 
+    @Value("${beauty.ai.python.mock-embed-enabled:true}")
+    private boolean mockEmbedEnabled;
+
+    @Value("${beauty.ai.python.mock-embed-dim:384}")
+    private int mockEmbedDim;
+
+    private final AtomicLong lastEmbedWarnAt = new AtomicLong(0L);
+    private final AtomicInteger suppressedEmbedWarn = new AtomicInteger(0);
+
     public List<float[]> embed(List<String> texts) {
         if (texts == null || texts.isEmpty()) {
             return List.of();
@@ -59,6 +72,10 @@ public class PythonAIClient {
         } catch (BusinessException ex) {
             throw ex;
         } catch (Exception ex) {
+            logEmbedFallback(ex);
+            if (mockEmbedEnabled) {
+                return mockEmbed(texts);
+            }
             throw new BusinessException(ErrorCode.AI_SERVICE_UNAVAILABLE, "Embedding service unavailable");
         }
     }
@@ -195,6 +212,67 @@ public class PythonAIClient {
             result.add(arr);
         }
         return result;
+    }
+
+    /**
+     * Deterministic local embedding fallback.
+     * Ensures vector retrieval remains available when external python embedding service is down.
+     */
+    private List<float[]> mockEmbed(List<String> texts) {
+        int dim = Math.max(64, mockEmbedDim);
+        List<float[]> vectors = new ArrayList<>(texts.size());
+        for (String text : texts) {
+            vectors.add(mockVector(text, dim));
+        }
+        return vectors;
+    }
+
+    private float[] mockVector(String text, int dim) {
+        float[] vec = new float[dim];
+        String safe = text == null ? "" : text;
+        String[] tokens = safe.toLowerCase().split("\\s+|[，。！？；：,.!?;:\\-_/()\\[\\]{}\"'“”‘’]+");
+        for (String token : tokens) {
+            if (token == null || token.isBlank()) {
+                continue;
+            }
+            CRC32 crc = new CRC32();
+            crc.update(token.getBytes(StandardCharsets.UTF_8));
+            long v = crc.getValue();
+            int i1 = (int) (v % dim);
+            int i2 = (int) ((v / 97) % dim);
+            vec[i1] += 1.0f;
+            vec[i2] += 0.5f;
+        }
+        // L2 normalize
+        double norm = 0d;
+        for (float x : vec) {
+            norm += x * x;
+        }
+        if (norm > 0d) {
+            double inv = 1d / Math.sqrt(norm);
+            for (int i = 0; i < vec.length; i++) {
+                vec[i] = (float) (vec[i] * inv);
+            }
+        }
+        return vec;
+    }
+
+    private void logEmbedFallback(Exception ex) {
+        long now = System.currentTimeMillis();
+        long last = lastEmbedWarnAt.get();
+        // Avoid startup log storms when warmup processes many chunks.
+        if (now - last >= 60_000 && lastEmbedWarnAt.compareAndSet(last, now)) {
+            int suppressed = suppressedEmbedWarn.getAndSet(0);
+            if (suppressed > 0) {
+                log.warn("python /embed unavailable, reason={}, fallback={}, suppressed={} similar logs in last 60s",
+                        ex.getMessage(), mockEmbedEnabled ? "mock-vector" : "disabled", suppressed);
+            } else {
+                log.warn("python /embed unavailable, reason={}, fallback={}",
+                        ex.getMessage(), mockEmbedEnabled ? "mock-vector" : "disabled");
+            }
+            return;
+        }
+        suppressedEmbedWarn.incrementAndGet();
     }
 
     private WebClient client() {

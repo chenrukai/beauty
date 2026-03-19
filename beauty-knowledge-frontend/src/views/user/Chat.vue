@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="chat-page">
     <aside class="left">
       <el-card shadow="never" class="panel">
@@ -66,8 +66,11 @@
       <div class="messages">
         <template v-if="chat.messages.length">
           <MessageBubble v-for="(m, idx) in chat.messages" :key="idx" :role="m.role">
-            <StreamText :text="m.content" />
-            <div v-if="m.sources?.length" class="sources">
+            <div v-if="m.role === 'assistant'" class="msg-tools">
+              <el-button text size="small" @click="copyAnswer(m.content)">复制回答</el-button>
+            </div>
+            <StreamText :text="m.role === 'assistant' ? sanitizeAssistantText(m.content) : m.content" />
+            <div v-if="idx === lastAssistantWithSourcesIndex && m.sources?.length" class="sources">
               <SourceCard v-for="(s, i) in m.sources" :key="i" :source="s" />
             </div>
           </MessageBubble>
@@ -79,8 +82,21 @@
       </div>
 
       <div class="ask">
-        <el-input v-model="question" type="textarea" :rows="3" placeholder="请输入问题..." />
-        <el-button type="primary" :loading="chat.isStreaming" @click="ask">发送</el-button>
+        <el-input
+          v-model="question"
+          type="textarea"
+          :rows="3"
+          placeholder="请输入问题..."
+          @keydown="onAskInputKeydown"
+        />
+        <div class="ask-tools">
+          <input ref="fileInputRef" class="file-input" type="file" @change="onPickFile" />
+          <el-button plain @click="triggerFilePick">上传文件</el-button>
+          <span class="file-text">{{ selectedFileName }}</span>
+          <span v-if="documentModeSession && documentModeFileName" class="file-text">文档模式：{{ documentModeFileName }}</span>
+          <el-button v-if="attachedFile" text type="danger" @click="clearFile">移除</el-button>
+        </div>
+        <el-button type="primary" :loading="chat.isStreaming || summarizing" @click="ask">发送</el-button>
       </div>
     </section>
   </div>
@@ -99,6 +115,11 @@ import request from '../../api/request'
 const route = useRoute()
 const chat = useChatStore()
 const question = ref('')
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const attachedFile = ref<File | null>(null)
+const summarizing = ref(false)
+const documentModeSession = ref<number | null>(null)
+const documentModeFileName = ref('')
 const sessionPageNum = ref(1)
 const sessionPageSize = 10
 
@@ -107,13 +128,25 @@ const pagedSessions = computed(() => {
   return chat.sessionList.slice(start, start + sessionPageSize)
 })
 
+const lastAssistantWithSourcesIndex = computed(() => {
+  for (let i = chat.messages.length - 1; i >= 0; i--) {
+    const m = chat.messages[i]
+    if (m?.role === 'assistant' && m.sources?.length) {
+      return i
+    }
+  }
+  return -1
+})
+
 const quickQuestions = [
   '烟酰胺适合敏感肌吗？',
   '刷酸后怎么修护屏障？',
-  '油皮夏天该怎么分层护肤？',
+  '油皮夏天怎么分层护肤？',
   'VC 和 A 醇能一起用吗？',
   '痘印和暗沉分别怎么处理？'
 ]
+
+const selectedFileName = computed(() => attachedFile.value?.name || '未选择文件')
 
 watch(
   () => route.query.q,
@@ -130,11 +163,29 @@ onMounted(async () => {
 })
 
 async function ask() {
-  const q = question.value.trim()
-  if (!q) return
+  const q = question.value.trim() || '总结这个文件的内容'
+  if (chat.isStreaming || summarizing.value) return
   await recordAction('search', { keyword: q, targetType: 'knowledge', source: 'chat' })
-  await chat.streamAsk(q)
+  if (attachedFile.value) {
+    await askWithUpload(q)
+    question.value = ''
+    clearFile()
+    return
+  }
+  if (documentModeSession.value && chat.currentSessionId === documentModeSession.value) {
+    await askInDocumentMode(q)
+    question.value = ''
+    return
+  }
+  await chat.streamAsk(q, q)
   question.value = ''
+}
+
+function onAskInputKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Enter') return
+  if (e.shiftKey || e.isComposing) return
+  e.preventDefault()
+  ask()
 }
 
 async function askQuick(q: string) {
@@ -142,13 +193,133 @@ async function askQuick(q: string) {
   await ask()
 }
 
-function newSession() {
-  chat.currentSessionId = null
-  chat.messages = []
-  sessionPageNum.value = 1
+function triggerFilePick() {
+  fileInputRef.value?.click()
+}
+
+async function onPickFile(e: Event) {
+  const input = e.target as HTMLInputElement
+  const f = input.files?.[0] || null
+  attachedFile.value = f
+  if (!f) return
+  await recordAction('upload', { targetType: 'chat', source: 'chat', extra: f.name })
+}
+
+function clearFile() {
+  attachedFile.value = null
+  if (fileInputRef.value) fileInputRef.value.value = ''
+}
+
+async function askWithUpload(q: string) {
+  if (!attachedFile.value) return
+  const displayQuestion = `${q}\n\n[已上传附件：${attachedFile.value.name}（${formatFileSize(attachedFile.value.size)}）]`
+  chat.messages.push({ role: 'user', content: displayQuestion })
+  chat.messages.push({ role: 'assistant', content: '' })
+  summarizing.value = true
+  try {
+    const fd = new FormData()
+    fd.append('file', attachedFile.value)
+    fd.append('instruction', q)
+    if (chat.currentSessionId) {
+      fd.append('sessionId', String(chat.currentSessionId))
+    }
+    const res = await request.post('/chat/summarize-upload', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    const summary = String(res.data?.summary || '').trim()
+    const sid = Number(res.data?.sessionId || 0)
+    if (sid > 0) {
+      chat.currentSessionId = sid
+      documentModeSession.value = sid
+      documentModeFileName.value = attachedFile.value?.name || ''
+    }
+    const last = chat.messages[chat.messages.length - 1]
+    if (last && last.role === 'assistant') {
+      last.content = summary || 'AI service is unavailable. Please try again later.'
+    }
+    await chat.fetchSessions()
+  } catch (e: any) {
+    const last = chat.messages[chat.messages.length - 1]
+    if (last && last.role === 'assistant') {
+      last.content = 'Sorry, AI service is unavailable. Please try again later.'
+    }
+    ElMessage.error(e?.message || '文档总结失败，请稍后重试')
+  } finally {
+    summarizing.value = false
+  }
+}
+
+async function askInDocumentMode(q: string) {
+  if (!chat.currentSessionId) return
+  chat.messages.push({ role: 'user', content: q })
+  chat.messages.push({ role: 'assistant', content: '' })
+  summarizing.value = true
+  try {
+    const res = await request.post('/chat/file/ask', {
+      sessionId: chat.currentSessionId,
+      question: q
+    })
+    const answer = String(res.data?.answer || '').trim()
+    const last = chat.messages[chat.messages.length - 1]
+    if (last && last.role === 'assistant') {
+      last.content = answer || 'AI service is unavailable. Please try again later.'
+    }
+    await chat.fetchSessions()
+  } catch (e: any) {
+    const last = chat.messages[chat.messages.length - 1]
+    if (last && last.role === 'assistant') {
+      last.content = 'Sorry, AI service is unavailable. Please try again later.'
+    }
+    ElMessage.error(e?.message || '文档追问失败，请先重新上传文件')
+  } finally {
+    summarizing.value = false
+  }
+}
+
+function formatFileSize(size: number) {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(2)} MB`
+}
+
+async function copyAnswer(text: string) {
+  if (!text?.trim()) return
+  try {
+    await navigator.clipboard.writeText(sanitizeAssistantText(text))
+    ElMessage.success('已复制回答')
+  } catch {
+    ElMessage.error('复制失败，请手动复制')
+  }
+}
+
+function sanitizeAssistantText(text: string) {
+  if (!text) return ''
+  return text
+    .replace(/\r/g, '')
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/^\s*\d+\.\s+/gm, '')
+    .replace(/`+/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+async function newSession() {
+  try {
+    await chat.createSession()
+    sessionPageNum.value = 1
+  } catch (e: any) {
+    ElMessage.error(e?.message || '创建会话失败')
+  }
 }
 
 function openSession(id: number) {
+  if (documentModeSession.value !== id) {
+    documentModeSession.value = null
+    documentModeFileName.value = ''
+  }
   chat.fetchMessages(id)
 }
 
@@ -185,6 +356,31 @@ async function recordAction(actionType: string, payload: any = {}) {
   grid-template-columns: 320px 1fr;
   gap: 12px;
   min-height: calc(100vh - 94px);
+  color: var(--app-text);
+  --chat-surface: #ffffff;
+  --chat-soft-bg: #f8fafc;
+  --chat-hover-bg: #f3f4f6;
+  --chat-active-bg: #e5f3ff;
+  --chat-muted: #64748b;
+  --chat-subtle: #334155;
+}
+
+html[data-theme='night'] .chat-page {
+  --chat-surface: #171f2d;
+  --chat-soft-bg: #202d42;
+  --chat-hover-bg: #243247;
+  --chat-active-bg: #2f4466;
+  --chat-muted: #c3d0e3;
+  --chat-subtle: #d7e3f5;
+}
+
+html[data-theme='eye'] .chat-page {
+  --chat-surface: #f7f9e8;
+  --chat-soft-bg: #eef3d8;
+  --chat-hover-bg: #e7eed2;
+  --chat-active-bg: #dbe8bc;
+  --chat-muted: #50633b;
+  --chat-subtle: #2f4628;
 }
 
 .left {
@@ -207,21 +403,21 @@ async function recordAction(actionType: string, payload: any = {}) {
 }
 
 .metric {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--app-border);
   border-radius: 10px;
   padding: 8px 10px;
-  background: #fafafa;
+  background: var(--chat-soft-bg);
 }
 
 .metric span {
   display: block;
-  color: #64748b;
+  color: var(--chat-muted);
   font-size: 12px;
 }
 
 .metric strong {
   font-size: 22px;
-  color: #0f172a;
+  color: var(--app-text);
 }
 
 .session {
@@ -235,17 +431,18 @@ async function recordAction(actionType: string, payload: any = {}) {
 }
 
 .session:hover {
-  background: #f3f4f6;
+  background: var(--chat-hover-bg);
 }
 
 .session.active {
-  background: #e5f3ff;
+  background: var(--chat-active-bg);
 }
 
 .title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--app-text);
 }
 
 .quick-list {
@@ -256,6 +453,15 @@ async function recordAction(actionType: string, payload: any = {}) {
 
 .quick-btn {
   margin: 0;
+  --el-button-bg-color: var(--chat-surface);
+  --el-button-text-color: var(--app-text);
+  --el-button-border-color: var(--app-border);
+  --el-button-hover-bg-color: var(--chat-hover-bg);
+  --el-button-hover-text-color: var(--app-text);
+  --el-button-hover-border-color: var(--app-border);
+  --el-button-active-bg-color: var(--chat-active-bg);
+  --el-button-active-text-color: var(--app-text);
+  --el-button-active-border-color: var(--app-border);
 }
 
 .pager-mini {
@@ -276,14 +482,14 @@ async function recordAction(actionType: string, payload: any = {}) {
 
 .welcome p {
   margin: 0;
-  color: #334155;
+  color: var(--chat-subtle);
 }
 
 .messages {
   padding: 12px;
   overflow: auto;
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--chat-surface);
+  border: 1px solid var(--app-border);
   border-radius: 12px;
 }
 
@@ -302,22 +508,53 @@ async function recordAction(actionType: string, payload: any = {}) {
 
 .empty-state p {
   margin: 0;
-  color: #64748b;
+  color: var(--chat-muted);
 }
 
 .ask {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--app-border);
   border-radius: 12px;
   padding: 12px;
   display: grid;
   gap: 8px;
-  background: #fff;
+  background: var(--chat-surface);
+}
+
+.ask-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.file-input {
+  display: none;
+}
+
+.file-text {
+  color: var(--chat-muted);
+  font-size: 12px;
+}
+
+.msg-tools {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 4px;
 }
 
 .sources {
   margin-top: 8px;
   display: grid;
   gap: 8px;
+}
+
+:deep(.el-textarea__inner) {
+  background: var(--chat-surface);
+  color: var(--app-text);
+}
+
+:deep(.el-textarea__inner::placeholder) {
+  color: var(--chat-muted);
 }
 
 @media (max-width: 900px) {

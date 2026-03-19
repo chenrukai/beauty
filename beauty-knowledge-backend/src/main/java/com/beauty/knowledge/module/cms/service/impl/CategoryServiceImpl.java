@@ -40,7 +40,7 @@ public class CategoryServiceImpl implements CategoryService {
             // Compatible with legacy schema that does not have `sort_order`.
             log.warn("kb_category missing sort_order, fallback to id ordering for category tree");
             all = kbCategoryMapper.selectList(new LambdaQueryWrapper<KbCategory>()
-                    .select(KbCategory::getId, KbCategory::getName, KbCategory::getParentId)
+                    .select(KbCategory::getId, KbCategory::getName, KbCategory::getParentId, KbCategory::getStatus)
                     .orderByAsc(KbCategory::getId));
         }
 
@@ -109,6 +109,7 @@ public class CategoryServiceImpl implements CategoryService {
                 .name(category.getName())
                 .parentId(category.getParentId())
                 .sortOrder(category.getSortOrder())
+                .status(category.getStatus())
                 .children(new ArrayList<>(children))
                 .build();
     }

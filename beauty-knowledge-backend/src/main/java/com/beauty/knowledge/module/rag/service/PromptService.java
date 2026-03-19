@@ -18,13 +18,17 @@ public class PromptService {
         };
 
         String answerRule = """
-                Answer in simplified Chinese.
-                Keep the answer short and practical.
-                Use this format only:
-                1. Conclusion: one sentence
-                2. Reasons: up to 3 bullet points
-                3. Caution: one short sentence
-                Avoid long paragraphs, repetition, and markdown tables.
+                请使用简体中文回答。
+                回答要完整，不要为了简短而省略关键步骤或要点。
+                在用户未明确要求“简短”时，优先给出较详细版本。
+                优先使用以下结构：
+                1. 结论
+                2. 原理/原因
+                3. 实操建议（分步骤）
+                4. 注意事项
+                当知识库片段包含分点或分步骤时，要尽量覆盖完整逻辑，避免只回答一半。
+                当引用片段本身可能被截断时，不要原样停在半句，需基于可用信息补全成完整可执行建议。
+                不要编造事实；如信息不足，明确说明“根据当前知识库仅能回答到此”。
                 """;
 
         if (sources == null || sources.isEmpty()) {

@@ -40,4 +40,12 @@ const html = computed(() => {
   color: #0f766e;
   text-decoration: underline;
 }
+
+html[data-theme='night'] .linkified-text :deep(a) {
+  color: #1d4ed8;
+}
+
+html[data-theme='eye'] .linkified-text :deep(a) {
+  color: #3f6212;
+}
 </style>

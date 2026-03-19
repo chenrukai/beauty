@@ -27,8 +27,11 @@
 
     <main class="main">
       <header class="top">
-        <strong>AI 美业知识台 · 管理员</strong>
-        <el-button size="small" @click="onLogout">退出登录</el-button>
+        <strong>AI 美业知识库 · 管理端</strong>
+        <div class="top-actions">
+          <ThemeModeSwitch />
+          <el-button size="small" @click="onLogout">退出登录</el-button>
+        </div>
       </header>
       <section class="content">
         <router-view />
@@ -41,6 +44,7 @@
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
+import ThemeModeSwitch from '../components/common/ThemeModeSwitch.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -58,7 +62,7 @@ async function onLogout() {
 <style scoped>
 .admin-shell {
   min-height: 100vh;
-  background: #f4f7f7;
+  background: var(--admin-shell-bg);
 }
 
 .side {
@@ -69,7 +73,7 @@ async function onLogout() {
   width: 250px;
   overflow-y: auto;
   padding: 20px 14px;
-  background: linear-gradient(180deg, #123531 0%, #0c2522 100%);
+  background: var(--admin-side-bg);
   color: #fff;
   display: flex;
   flex-direction: column;
@@ -90,13 +94,13 @@ async function onLogout() {
 
 .group-title {
   margin: 0;
-  color: #8fd8c9;
+  color: var(--admin-group-title);
   font-size: 12px;
   letter-spacing: 0.06em;
 }
 
 .side a {
-  color: #dcfce7;
+  color: var(--admin-side-link);
   text-decoration: none;
   padding: 12px 14px;
   border-radius: 10px;
@@ -104,11 +108,11 @@ async function onLogout() {
 }
 
 .side a:hover {
-  background: rgba(15, 118, 110, 0.5);
+  background: var(--admin-side-hover);
 }
 
 .side a.router-link-active {
-  background: #0f766e;
+  background: var(--admin-side-link-active);
   color: #fff;
 }
 
@@ -126,8 +130,15 @@ async function onLogout() {
   justify-content: space-between;
   height: 56px;
   padding: 0 16px;
-  background: #fff;
-  border-bottom: 1px solid #e5e7eb;
+  background: var(--topbar-bg);
+  color: var(--topbar-text);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .content {

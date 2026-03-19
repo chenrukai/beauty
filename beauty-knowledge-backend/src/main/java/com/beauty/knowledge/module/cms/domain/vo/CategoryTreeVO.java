@@ -14,6 +14,7 @@ public class CategoryTreeVO {
     private String name;
     private Long parentId;
     private Integer sortOrder;
+    private Integer status;
 
     @Builder.Default
     private List<CategoryTreeVO> children = new ArrayList<>();

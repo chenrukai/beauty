@@ -142,18 +142,6 @@
         </el-select>
       </el-form-item>
 
-      <el-form-item label="类型">
-        <el-select v-model="createForm.type" style="width: 180px">
-          <el-option label="TEXT_TXT" value="TEXT_TXT" />
-          <el-option label="TEXT_MD" value="TEXT_MD" />
-          <el-option label="DOC_PDF" value="DOC_PDF" />
-          <el-option label="DOC_WORD" value="DOC_WORD" />
-          <el-option label="DOC_PPT" value="DOC_PPT" />
-          <el-option label="DOC_EXCEL" value="DOC_EXCEL" />
-          <el-option label="IMAGE" value="IMAGE" />
-        </el-select>
-      </el-form-item>
-
       <el-form-item label="状态">
         <el-radio-group v-model="createForm.status">
           <el-radio :label="0">草稿</el-radio>
@@ -212,7 +200,6 @@ const createForm = ref({
   title: '',
   summary: '',
   categoryId: undefined as number | undefined,
-  type: 'TEXT_TXT',
   content: '',
   status: 0
 })
@@ -352,7 +339,6 @@ function openCreate() {
     title: '',
     summary: '',
     categoryId: flatCategories.value[0]?.id,
-    type: 'TEXT_TXT',
     content: '',
     status: 0
   }
@@ -371,7 +357,13 @@ async function submitCreate() {
 
   creating.value = true
   try {
-    await store.createKnowledge(createForm.value)
+    await store.createKnowledge({
+      title: createForm.value.title,
+      summary: createForm.value.summary,
+      categoryId: createForm.value.categoryId,
+      content: createForm.value.content,
+      status: createForm.value.status
+    })
     ElMessage.success('新增成功')
     createVisible.value = false
     await load(1)

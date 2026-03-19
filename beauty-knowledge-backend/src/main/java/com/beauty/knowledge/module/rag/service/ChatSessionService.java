@@ -15,6 +15,8 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ChatSessionService {
 
+    private static final String DEFAULT_TITLE = "新会话";
+
     private final ChatSessionMapper chatSessionMapper;
 
     public List<ChatSession> listByUser(Long userId) {
@@ -26,19 +28,25 @@ public class ChatSessionService {
 
     @Transactional(rollbackFor = Exception.class)
     public Long getOrCreate(Long userId, Long sessionId, String question) {
+        String normalizedQuestion = normalizeTitle(question);
         if (sessionId != null) {
             ChatSession exist = chatSessionMapper.selectById(sessionId);
             if (exist == null || !exist.getUserId().equals(userId) || exist.getStatus() == 0) {
                 throw new BusinessException(ErrorCode.NOT_FOUND, "会话不存在");
             }
+            if (DEFAULT_TITLE.equals(exist.getTitle()) && !normalizedQuestion.isBlank()) {
+                exist.setTitle(normalizedQuestion);
+                chatSessionMapper.updateById(exist);
+            }
             return sessionId;
         }
-        ChatSession session = new ChatSession();
-        session.setUserId(userId);
-        session.setTitle((question == null ? "新会话" : question).substring(0, Math.min(24, (question == null ? "新会话" : question).length())));
-        session.setStatus(1);
-        chatSessionMapper.insert(session);
-        return session.getId();
+        return create(userId, normalizedQuestion.isBlank() ? DEFAULT_TITLE : normalizedQuestion);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public ChatSession createEmpty(Long userId) {
+        Long id = create(userId, DEFAULT_TITLE);
+        return chatSessionMapper.selectById(id);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -49,5 +57,22 @@ public class ChatSessionService {
         }
         session.setStatus(0);
         chatSessionMapper.updateById(session);
+    }
+
+    private Long create(Long userId, String title) {
+        ChatSession session = new ChatSession();
+        session.setUserId(userId);
+        session.setTitle(normalizeTitle(title).isBlank() ? DEFAULT_TITLE : normalizeTitle(title));
+        session.setStatus(1);
+        chatSessionMapper.insert(session);
+        return session.getId();
+    }
+
+    private String normalizeTitle(String raw) {
+        String value = raw == null ? "" : raw.trim();
+        if (value.isEmpty()) {
+            return "";
+        }
+        return value.substring(0, Math.min(24, value.length()));
     }
 }

@@ -5,3 +5,4 @@ _doc_extract/
 *.log
 .idea/
 *.iml
+**/.env

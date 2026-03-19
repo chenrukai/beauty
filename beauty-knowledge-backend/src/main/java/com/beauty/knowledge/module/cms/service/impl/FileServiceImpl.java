@@ -9,12 +9,14 @@ import com.beauty.knowledge.common.util.SecurityUtil;
 import com.beauty.knowledge.infrastructure.storage.MinioStorageService;
 import com.beauty.knowledge.infrastructure.vector.MilvusVectorStore;
 import com.beauty.knowledge.module.cms.domain.entity.KbChunk;
+import com.beauty.knowledge.module.cms.domain.entity.KbCategory;
 import com.beauty.knowledge.module.cms.domain.entity.KbFile;
 import com.beauty.knowledge.module.cms.domain.entity.KbKnowledge;
 import com.beauty.knowledge.module.cms.domain.entity.ProcessTask;
 import com.beauty.knowledge.module.cms.domain.vo.FileUploadVO;
 import com.beauty.knowledge.module.cms.domain.vo.ProcessTaskViewVO;
 import com.beauty.knowledge.module.cms.mapper.KbChunkMapper;
+import com.beauty.knowledge.module.cms.mapper.KbCategoryMapper;
 import com.beauty.knowledge.module.cms.mapper.KbFileMapper;
 import com.beauty.knowledge.module.cms.mapper.KbKnowledgeMapper;
 import com.beauty.knowledge.module.cms.mapper.ProcessTaskMapper;
@@ -41,6 +43,7 @@ public class FileServiceImpl implements FileService {
     private final KbFileMapper kbFileMapper;
     private final ProcessTaskMapper processTaskMapper;
     private final KbChunkMapper kbChunkMapper;
+    private final KbCategoryMapper kbCategoryMapper;
     private final KbKnowledgeMapper kbKnowledgeMapper;
     private final RabbitTemplate rabbitTemplate;
     private final MinioStorageService minioStorageService;
@@ -59,6 +62,15 @@ public class FileServiceImpl implements FileService {
         KbKnowledge knowledge = kbKnowledgeMapper.selectById(knowledgeId);
         if (knowledge == null) {
             throw new BusinessException(ErrorCode.KNOWLEDGE_NOT_FOUND);
+        }
+        if (categoryId != null) {
+            KbCategory category = kbCategoryMapper.selectById(categoryId);
+            if (category == null) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "分类节点不存在");
+            }
+            if (!Integer.valueOf(1).equals(category.getStatus())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "该分类节点已停用，不能用于文件上传");
+            }
         }
 
         String detectedType = resolveFileType(fileType, file.getOriginalFilename());

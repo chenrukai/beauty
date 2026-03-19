@@ -28,7 +28,7 @@
     </el-row>
 
     <el-row :gutter="12" style="margin-top: 12px">
-      <el-col :xs="24" :lg="8">
+      <el-col :xs="24" :lg="12">
         <el-card>
           <template #header>浏览来源占比</template>
           <div v-if="sourceRatio.length" class="ratio-list">
@@ -40,7 +40,22 @@
           <el-empty v-else description="暂无数据" :image-size="70" />
         </el-card>
       </el-col>
-      <el-col :xs="24" :lg="16">
+      <el-col :xs="24" :lg="12">
+        <el-card>
+          <template #header>热门搜索词（今日）</template>
+          <div v-if="hotKeywords.length" class="keyword-list">
+            <div v-for="it in hotKeywords" :key="`${it.keyword}-${it.id}`" class="keyword-item">
+              <span class="kw">{{ it.keyword }}</span>
+              <span class="count">{{ it.searchCount }}</span>
+            </div>
+          </div>
+          <el-empty v-else description="暂无数据" :image-size="70" />
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <el-row :gutter="12" style="margin-top: 12px">
+      <el-col :xs="24">
         <el-card>
           <template #header>最近任务</template>
           <el-table :data="knowledgeStore.recentTasks" stripe>
@@ -63,19 +78,6 @@
             </el-table-column>
             <el-table-column prop="updatedAt" label="更新时间" min-width="170" />
           </el-table>
-        </el-card>
-      </el-col>
-
-      <el-col :xs="24" :lg="8">
-        <el-card>
-          <template #header>热门搜索词（今日）</template>
-          <div v-if="hotKeywords.length" class="keyword-list">
-            <div v-for="it in hotKeywords" :key="`${it.keyword}-${it.id}`" class="keyword-item">
-              <span class="kw">{{ it.keyword }}</span>
-              <span class="count">{{ it.searchCount }}</span>
-            </div>
-          </div>
-          <el-empty v-else description="暂无数据" :image-size="70" />
         </el-card>
       </el-col>
     </el-row>
@@ -126,6 +128,7 @@ onMounted(async () => {
   refreshTimer = window.setInterval(() => {
     void loadHotContents()
     void loadSourceRatio()
+    void loadHotKeywords()
   }, 15000)
 })
 
@@ -218,15 +221,16 @@ function sourceText(source?: string) {
 
 <style scoped>
 .metric-label {
-  color: #64748b;
+  color: var(--app-text);
   font-size: 13px;
+  opacity: 0.78;
 }
 
 .metric-value {
   margin-top: 6px;
   font-size: 30px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--app-text);
 }
 
 .keyword-list {
@@ -238,17 +242,17 @@ function sourceText(source?: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--app-border);
   border-radius: 10px;
   padding: 8px 10px;
 }
 
 .kw {
-  color: #0f172a;
+  color: var(--app-text);
 }
 
 .count {
-  color: #0f766e;
+  color: var(--app-accent-strong);
   font-weight: 600;
 }
 
@@ -258,9 +262,9 @@ function sourceText(source?: string) {
 }
 
 .ratio-label {
-  color: #334155;
+  color: var(--app-text);
+  opacity: 0.9;
   font-size: 13px;
   margin-bottom: 4px;
 }
 </style>
-

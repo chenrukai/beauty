@@ -39,6 +39,14 @@
           <div class="recommend-content">{{ item.content }}</div>
           <div class="recommend-actions">
             <el-button size="small" type="info" plain @click="openKnowledge(item.id)">查看详情</el-button>
+            <el-button
+              size="small"
+              :type="favoriteMap[item.id] ? 'warning' : 'default'"
+              plain
+              @click="toggleFavorite(item.id)"
+            >
+              {{ favoriteMap[item.id] ? '已收藏' : '收藏' }}
+            </el-button>
             <el-button size="small" @click="goChat(`请解释：${item.title}`)">继续追问</el-button>
           </div>
         </div>
@@ -63,6 +71,16 @@
       <h3 style="margin-top: 0">{{ knowledgeDetail.title }}</h3>
       <p class="dialog-summary">{{ knowledgeDetail.summary || '暂无摘要' }}</p>
       <LinkifiedText class="dialog-content" :text="knowledgeDetail.content || '暂无正文'" />
+      <div class="dialog-actions">
+        <el-button
+          size="small"
+          :type="favoriteMap[Number(knowledgeDetail.id)] ? 'warning' : 'primary'"
+          plain
+          @click="toggleFavorite(Number(knowledgeDetail.id))"
+        >
+          {{ favoriteMap[Number(knowledgeDetail.id)] ? '取消收藏' : '收藏知识' }}
+        </el-button>
+      </div>
     </template>
   </el-dialog>
 </template>
@@ -90,6 +108,7 @@ const recommendTotal = ref(0)
 const noticeList = ref<any[]>([])
 const knowledgeDialogVisible = ref(false)
 const knowledgeDetail = ref<any>(null)
+const favoriteMap = ref<Record<number, boolean>>({})
 
 onMounted(async () => {
   await Promise.allSettled([fetchRecommend(1), fetchNotices()])
@@ -127,6 +146,7 @@ async function fetchRecommend(page = recommendPageNum.value) {
       viewCount: Number(item.viewCount || 0)
     }))
     recommendTotal.value = Number(res.data?.total || 0)
+    await syncFavoriteState(recommendList.value.map((item) => item.id))
   } catch {
     recommendList.value = []
     recommendTotal.value = 0
@@ -146,12 +166,45 @@ async function openKnowledge(knowledgeId: number) {
     const res = await request.get(`/knowledge/${knowledgeId}`)
     const data = res.data || {}
     knowledgeDetail.value = data.knowledge || null
+    await syncFavoriteState([knowledgeId])
     knowledgeDialogVisible.value = true
     await recordAction('click', { targetType: 'knowledge', targetId: knowledgeId, source: 'recommend' })
     await recordAction('browse', { targetType: 'knowledge', targetId: knowledgeId, source: 'recommend' })
     await fetchRecommend(recommendPageNum.value)
   } catch (e: any) {
     ElMessage.error(e?.message || '加载知识详情失败')
+  }
+}
+
+async function syncFavoriteState(ids: number[]) {
+  const uniqueIds = Array.from(new Set(ids.filter((id) => Number.isFinite(id))))
+  if (!uniqueIds.length) return
+  await Promise.allSettled(
+    uniqueIds.map(async (id) => {
+      try {
+        const res = await request.get(`/user/favorite/check/${id}`)
+        favoriteMap.value[id] = Boolean(res.data?.favorited)
+      } catch {
+        favoriteMap.value[id] = false
+      }
+    })
+  )
+}
+
+async function toggleFavorite(knowledgeId: number) {
+  if (!knowledgeId) return
+  try {
+    if (favoriteMap.value[knowledgeId]) {
+      await request.delete(`/user/favorite/${knowledgeId}`)
+      favoriteMap.value[knowledgeId] = false
+      ElMessage.success('已取消收藏')
+    } else {
+      await request.post(`/user/favorite/${knowledgeId}`)
+      favoriteMap.value[knowledgeId] = true
+      ElMessage.success('收藏成功')
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || '收藏操作失败')
   }
 }
 
@@ -268,6 +321,12 @@ async function recordAction(actionType: string, payload: any = {}) {
   white-space: pre-wrap;
   line-height: 1.8;
   color: #334155;
+}
+
+.dialog-actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
 }
 
 @media (max-width: 1100px) {

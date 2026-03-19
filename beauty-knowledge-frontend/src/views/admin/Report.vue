@@ -13,7 +13,7 @@
       </div>
     </el-card>
 
-    <el-row :gutter="12" style="margin-top: 12px">
+    <el-row :gutter="12" class="metric-row">
       <el-col :xs="24" :md="8">
         <el-card>
           <el-statistic title="活跃用户" :value="active.activeUsers" />
@@ -31,8 +31,8 @@
       </el-col>
     </el-row>
 
-    <el-row :gutter="12" style="margin-top: 12px">
-      <el-col :xs="24" :lg="12">
+    <div class="stack-grid">
+      <div class="stack-col">
         <el-card>
           <template #header>浏览趋势</template>
           <div v-if="browseTrend.length" class="trend-chart">
@@ -46,8 +46,17 @@
           </div>
           <el-empty v-else description="暂无数据" :image-size="80" />
         </el-card>
-      </el-col>
-      <el-col :xs="24" :lg="12">
+
+        <el-card>
+          <template #header>热门知识</template>
+          <el-table :data="hotKnowledge" stripe>
+            <el-table-column prop="title" label="标题" min-width="220" show-overflow-tooltip />
+            <el-table-column prop="browseCount" label="浏览次数" width="120" />
+          </el-table>
+        </el-card>
+      </div>
+
+      <div class="stack-col">
         <el-card>
           <template #header>浏览来源占比</template>
           <div v-if="sourceRatio.length" class="ratio-list">
@@ -58,20 +67,7 @@
           </div>
           <el-empty v-else description="暂无数据" :image-size="80" />
         </el-card>
-      </el-col>
-    </el-row>
 
-    <el-row :gutter="12" style="margin-top: 12px">
-      <el-col :xs="24" :lg="12">
-        <el-card>
-          <template #header>热门知识</template>
-          <el-table :data="hotKnowledge" stripe>
-            <el-table-column prop="title" label="标题" min-width="220" show-overflow-tooltip />
-            <el-table-column prop="browseCount" label="浏览次数" width="120" />
-          </el-table>
-        </el-card>
-      </el-col>
-      <el-col :xs="24" :lg="12">
         <el-card>
           <template #header>热门关键词</template>
           <el-table :data="hotKeywords" stripe>
@@ -79,8 +75,8 @@
             <el-table-column prop="searchCount" label="搜索次数" width="120" />
           </el-table>
         </el-card>
-      </el-col>
-    </el-row>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -165,6 +161,23 @@ function sourceText(source?: string) {
   align-items: center;
 }
 
+.metric-row {
+  margin-top: 12px;
+}
+
+.stack-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.stack-col {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
 .trend-chart {
   display: grid;
   gap: 8px;
@@ -179,14 +192,15 @@ function sourceText(source?: string) {
 
 .trend-label,
 .trend-value {
-  color: #334155;
+  color: var(--app-text);
   font-size: 12px;
+  opacity: 0.9;
 }
 
 .trend-bar-wrap {
   height: 10px;
   border-radius: 999px;
-  background: #e2e8f0;
+  background: var(--app-border);
   overflow: hidden;
 }
 
@@ -203,8 +217,14 @@ function sourceText(source?: string) {
 
 .ratio-label {
   margin-bottom: 4px;
-  color: #334155;
+  color: var(--app-text);
+  opacity: 0.9;
   font-size: 13px;
 }
-</style>
 
+@media (max-width: 980px) {
+  .stack-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

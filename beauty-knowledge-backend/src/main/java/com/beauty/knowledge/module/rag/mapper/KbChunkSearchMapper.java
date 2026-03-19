@@ -12,4 +12,9 @@ public interface KbChunkSearchMapper {
     List<ChunkResult> fullTextSearch(@Param("keyword") String keyword, @Param("topk") int topk);
 
     List<ChunkResult> selectByIds(@Param("ids") List<Long> ids);
+
+    List<ChunkResult> selectContextByRange(@Param("fileId") Long fileId,
+                                           @Param("startChunkIndex") Integer startChunkIndex,
+                                           @Param("endChunkIndex") Integer endChunkIndex,
+                                           @Param("limit") Integer limit);
 }

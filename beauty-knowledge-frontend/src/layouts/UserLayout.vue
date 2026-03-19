@@ -4,7 +4,7 @@
       <div class="brand">
         <span class="brand-badge">用户端</span>
         <div>
-          <strong>AI 美业知识台</strong>
+          <strong>AI 美业知识库</strong>
           <p>面向咨询、学习和日常接待的用户工作区。</p>
         </div>
       </div>
@@ -15,6 +15,8 @@
           <router-link to="/user/chat">问答助手</router-link>
           <router-link to="/user/favorites">我的收藏</router-link>
         </nav>
+
+        <ThemeModeSwitch />
 
         <div class="user-pill">
           <span class="label">当前账号</span>
@@ -34,6 +36,7 @@
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
+import ThemeModeSwitch from '../components/common/ThemeModeSwitch.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -51,9 +54,7 @@ async function onLogout() {
 <style scoped>
 .user-shell {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at top left, rgba(255, 246, 220, 0.82), transparent 24%),
-    linear-gradient(180deg, #f7f4ec 0%, #f0f5f2 100%);
+  background: var(--user-shell-bg);
 }
 
 .topbar {
@@ -62,9 +63,9 @@ async function onLogout() {
   justify-content: space-between;
   gap: 14px;
   padding: 20px 24px;
-  background: rgba(15, 118, 110, 0.94);
-  color: #fff;
-  box-shadow: 0 16px 40px rgba(15, 118, 110, 0.2);
+  background: var(--user-topbar-bg);
+  color: var(--user-topbar-text);
+  box-shadow: var(--user-topbar-shadow);
 }
 
 .brand {
@@ -81,7 +82,7 @@ async function onLogout() {
 
 .brand p {
   margin: 4px 0 0;
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--user-muted-text);
 }
 
 .brand-badge {
@@ -106,7 +107,7 @@ async function onLogout() {
 }
 
 .main-nav a {
-  color: #d7f9ef;
+  color: var(--user-nav-link);
   text-decoration: none;
   padding: 8px 12px;
   border-radius: 999px;
@@ -115,25 +116,25 @@ async function onLogout() {
 }
 
 .main-nav a:hover {
-  border-color: rgba(255, 255, 255, 0.3);
+  border-color: var(--user-nav-border-hover);
 }
 
 .main-nav a.router-link-active {
-  background: rgba(255, 255, 255, 0.18);
-  color: #fff;
+  background: var(--user-nav-active-bg);
+  color: var(--user-nav-active-text);
 }
 
 .user-pill {
   padding: 10px 14px;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--user-pill-bg);
   min-width: 124px;
 }
 
 .user-pill .label {
   display: block;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--user-pill-label);
 }
 
 .logout-btn {

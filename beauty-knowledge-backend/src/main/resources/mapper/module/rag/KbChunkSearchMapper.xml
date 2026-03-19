@@ -8,6 +8,7 @@
         SELECT id                 AS chunkId,
                file_id            AS fileId,
                page_no            AS pageNo,
+               chunk_index        AS chunkIndex,
                content            AS content,
                MATCH(content) AGAINST(#{keyword} IN BOOLEAN MODE) AS score,
                0                  AS `rank`
@@ -21,6 +22,7 @@
         SELECT id      AS chunkId,
                file_id AS fileId,
                page_no AS pageNo,
+               chunk_index AS chunkIndex,
                content AS content,
                0       AS score,
                0       AS `rank`
@@ -29,5 +31,20 @@
         <foreach collection="ids" item="id" open="(" separator="," close=")">
             #{id}
         </foreach>
+    </select>
+
+    <select id="selectContextByRange" resultType="com.beauty.knowledge.module.rag.domain.dto.ChunkResult">
+        SELECT id          AS chunkId,
+               file_id     AS fileId,
+               page_no     AS pageNo,
+               chunk_index AS chunkIndex,
+               content     AS content,
+               0           AS score,
+               0           AS `rank`
+        FROM kb_chunk
+        WHERE file_id = #{fileId}
+          AND chunk_index BETWEEN #{startChunkIndex} AND #{endChunkIndex}
+        ORDER BY chunk_index ASC, id ASC
+        LIMIT #{limit}
     </select>
 </mapper>

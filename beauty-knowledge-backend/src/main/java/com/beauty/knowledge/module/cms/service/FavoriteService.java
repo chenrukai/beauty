@@ -10,4 +10,6 @@ public interface FavoriteService {
     void removeFavorite(Long knowledgeId);
 
     PageResult<FavoriteKnowledgeVO> pageFavorites(Long pageNum, Long pageSize, String keyword);
+
+    boolean isFavorited(Long knowledgeId);
 }

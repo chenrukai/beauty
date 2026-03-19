@@ -39,15 +39,17 @@ beauty:
       timeout: 30000
       transcribe-base-url: ${PYTHON_TRANSCRIBE_BASE_URL:${PYTHON_AI_BASE_URL:http://localhost:8001}}
       transcribe-timeout: 180000
+      mock-embed-enabled: true
+      mock-embed-dim: 384
   llm:
     provider: ollama
     ollama:
       base-url: http://localhost:11434
       model: qwen2.5:1.5b
       timeout-ms: 180000
-      num-predict: 120
+      num-predict: 1800
       temperature: 0.2
-      num-ctx: 1024
+      num-ctx: 4096
       think: false
     qwen:
       base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
@@ -55,17 +57,23 @@ beauty:
       model: qwen-plus
       timeout-ms: 30000
   rag:
-    bm25-topk: 2
-    vector-topk: 2
+    bm25-topk: 10
+    vector-topk: 10
     rrf-k: 60
-    rerank-top: 2
-    context-max-round: 1
+    rerank-top: 8
+    display-source-top: 4
+    display-source-context-radius: 1
+    display-source-context-limit: 3
+    context-max-round: 5
     intent-timeout: 30000
   pipeline:
     max-retry: 3
     embed-batch-size: 32
     chunk-size: 400
     chunk-overlap: 80
+  vector:
+    warmup-enabled: true
+    warmup-batch-size: 200
   cors:
     allowed-origins:
       - http://localhost:5173

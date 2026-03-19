@@ -36,27 +36,49 @@ export const useChatStore = defineStore('chat', () => {
   async function fetchMessages(sessionId: number) {
     const res = await request.get(`/chat/session/${sessionId}/messages`)
     currentSessionId.value = sessionId
-    messages.value = (res.data || []).map((x: any) => ({ role: x.role, content: x.content }))
+    messages.value = (res.data || []).map((x: any) => ({
+      role: x.role,
+      content: x.content,
+      sources: normalizeSources(x.sources)
+    }))
+    const lastAssistant = [...messages.value].reverse().find((m) => m.role === 'assistant' && m.sources?.length)
+    sources.value = (lastAssistant?.sources || []) as Source[]
   }
 
-  async function streamAsk(question: string) {
-    messages.value.push({ role: 'user', content: question })
+  async function createSession() {
+    const res = await request.post('/chat/session/new')
+    const session = res.data
+    if (session?.id) {
+      currentSessionId.value = Number(session.id)
+      messages.value = []
+      sources.value = []
+      await fetchSessions()
+    }
+    return session
+  }
+
+  async function streamAsk(question: string, displayQuestion?: string) {
+    messages.value.push({ role: 'user', content: displayQuestion || question })
     messages.value.push({ role: 'assistant', content: '' })
     isStreaming.value = true
     streamingContent.value = ''
     sources.value = []
 
     try {
-      const params = new URLSearchParams({
-        question,
-        ...(currentSessionId.value ? { sessionId: String(currentSessionId.value) } : {})
-      })
       const auth = useAuthStore().token || localStorage.getItem('bk_token') || ''
       const controller = new AbortController()
       const timeout = window.setTimeout(() => controller.abort(), 190000)
-      const res = await fetch(`${apiBaseURL}/chat/stream?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${auth}` }
-        , signal: controller.signal
+      const res = await fetch(`${apiBaseURL}/chat/stream`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${auth}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          question,
+          ...(currentSessionId.value ? { sessionId: Number(currentSessionId.value) } : {})
+        }),
+        signal: controller.signal
       })
       window.clearTimeout(timeout)
 
@@ -152,8 +174,31 @@ export const useChatStore = defineStore('chat', () => {
     if (currentSessionId.value === sessionId) {
       currentSessionId.value = null
       messages.value = []
+      sources.value = []
     }
     await fetchSessions()
+  }
+
+  function normalizeSources(raw: any): Source[] | undefined {
+    if (!raw) return undefined
+    let parsed: any = raw
+    if (typeof raw === 'string') {
+      try {
+        parsed = JSON.parse(raw)
+      } catch {
+        return undefined
+      }
+    }
+    if (!Array.isArray(parsed)) return undefined
+    const normalized = parsed
+      .map((s: any) => ({
+        chunkId: Number(s?.chunkId || 0),
+        fileId: Number(s?.fileId || 0),
+        pageNo: Number(s?.pageNo || 0),
+        content: String(s?.content || '')
+      }))
+      .filter((s: Source) => s.content && s.fileId > 0)
+    return normalized.length ? normalized : undefined
   }
 
   return {
@@ -165,6 +210,7 @@ export const useChatStore = defineStore('chat', () => {
     sources,
     fetchSessions,
     fetchMessages,
+    createSession,
     streamAsk,
     deleteSession
   }

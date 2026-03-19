@@ -75,4 +75,13 @@ public class FavoriteServiceImpl implements FavoriteService {
                 .pages(pages)
                 .build();
     }
+
+    @Override
+    public boolean isFavorited(Long knowledgeId) {
+        Long userId = SecurityUtil.getCurrentUserId();
+        Long count = favoriteRecordMapper.selectCount(new LambdaQueryWrapper<FavoriteRecord>()
+                .eq(FavoriteRecord::getUserId, userId)
+                .eq(FavoriteRecord::getKnowledgeId, knowledgeId));
+        return count != null && count > 0;
+    }
 }

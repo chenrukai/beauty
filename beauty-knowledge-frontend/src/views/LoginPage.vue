@@ -5,8 +5,7 @@
         <p class="eyebrow">美业知识控制台</p>
         <h1>把门店知识、产品理解和用户问答放进一个更顺手的工作台。</h1>
         <p class="intro">
-          面向真实业务场景的登录入口，应该清晰、克制，也要让人愿意继续使用。
-          当前支持管理员与普通用户两种入口，注册仅开放普通用户。
+          面向真实业务场景的登录入口，既要清晰，也要好用。当前支持管理员与普通用户两类入口，注册仅开放普通用户。
         </p>
       </div>
 
@@ -27,11 +26,15 @@
     </section>
 
     <section class="auth-panel">
+      <div class="panel-tools">
+        <ThemeModeSwitch />
+      </div>
+
       <div class="panel-head">
         <p class="panel-kicker">{{ isRegister ? '创建普通用户账号' : '欢迎回来' }}</p>
-        <h2>{{ isRegister ? '注册后即可登录使用' : '登录 AI 美业知识台' }}</h2>
+        <h2>{{ isRegister ? '注册后即可登录使用' : '登录 AI 美业知识库' }}</h2>
         <p class="panel-note">
-          {{ isRegister ? '注册不会创建管理员权限，也不需要填写昵称。' : '请使用你的账号和密码登录。' }}
+          {{ isRegister ? '注册不会创建管理员权限，也不需要填写邮箱。' : '请输入你的账号和密码登录。' }}
         </p>
       </div>
 
@@ -89,6 +92,7 @@ import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
+import ThemeModeSwitch from '../components/common/ThemeModeSwitch.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -264,6 +268,11 @@ h1 {
     linear-gradient(180deg, #fffdf8 0%, #f8f4ea 100%);
 }
 
+.panel-tools {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .panel-head h2 {
   margin: 8px 0 8px;
   font-size: 44px;
@@ -296,9 +305,9 @@ h1 {
 .primary-btn {
   width: 100%;
   margin-top: 8px;
-  height: 62px;
+  height: 48px;
   border-radius: 20px;
-  font-size: 31px;
+  font-size: 18px;
   letter-spacing: 0.05em;
   background: linear-gradient(135deg, #0f766e 0%, #2f8f82 100%);
   border: none;
@@ -310,7 +319,7 @@ h1 {
   justify-content: center;
   gap: 8px;
   color: #5f726f;
-  font-size: 26px;
+  font-size: 16px;
 }
 
 .mode-switch {
@@ -319,7 +328,7 @@ h1 {
   color: #0f766e;
   font-weight: 600;
   cursor: pointer;
-  font-size: 26px;
+  font-size: 16px;
 }
 
 @media (max-width: 1180px) {

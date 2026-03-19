@@ -15,6 +15,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Map;
+
 @Tag(name = "收藏管理")
 @RestController
 @RequestMapping("/api/user/favorite")
@@ -43,5 +45,11 @@ public class FavoriteController {
                                                          @RequestParam(defaultValue = "10") Long pageSize,
                                                          @RequestParam(required = false) String keyword) {
         return Result.success(favoriteService.pageFavorites(pageNum, pageSize, keyword));
+    }
+
+    @Operation(summary = "是否已收藏")
+    @GetMapping("/check/{knowledgeId}")
+    public Result<Map<String, Boolean>> isFavorited(@PathVariable Long knowledgeId) {
+        return Result.success(Map.of("favorited", favoriteService.isFavorited(knowledgeId)));
     }
 }
