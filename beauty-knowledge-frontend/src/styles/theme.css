@@ -126,6 +126,19 @@ body {
   --el-card-bg-color: var(--app-card-bg);
 }
 
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner {
+  color: var(--app-text) !important;
+  background-color: var(--app-card-bg) !important;
+  border-color: var(--app-border) !important;
+}
+
+.el-input__inner::placeholder,
+.el-textarea__inner::placeholder {
+  color: var(--stat-head) !important;
+}
+
 .el-card,
 .el-table,
 .el-input__wrapper,
@@ -146,6 +159,16 @@ html[data-theme='night'] .el-drawer {
   --el-border-color-light: #3a475f;
   --el-text-color-primary: #edf2f7;
   --el-text-color-regular: #dbe5f2;
+}
+
+html[data-theme='night'] {
+  --el-fill-color-blank: #171f2d;
+  --el-color-info-light-9: #1f2d40;
+}
+
+html[data-theme='night'] .el-button--text,
+html[data-theme='night'] .el-link {
+  color: #9ec8ff !important;
 }
 
 .el-statistic__head {

@@ -9,11 +9,11 @@ const props = defineProps<{ text?: string | null }>()
 
 function escapeHtml(input: string) {
   return input
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 const html = computed(() => {
@@ -22,8 +22,8 @@ const html = computed(() => {
 
   const escaped = escapeHtml(raw)
   const urlRegex = /(https?:\/\/[^\s<]+)/g
-  return escaped.replace(urlRegex, (url) => {
-    const safeUrl = url.replaceAll('"', '%22')
+  return escaped.replace(urlRegex, (url: string) => {
+    const safeUrl = url.replace(/"/g, '%22')
     return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${url}</a>`
   })
 })

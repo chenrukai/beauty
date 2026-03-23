@@ -55,6 +55,17 @@ public class ProcessTaskService {
     }
 
     @Transactional(rollbackFor = Exception.class)
+    public void markExtracting(Long fileId) {
+        ProcessTask task = getByFileId(fileId);
+        if (task != null) {
+            task.setStatus("EXTRACTING");
+            task.setProgress(85);
+            task.setResultMsg("extracting entities");
+            processTaskMapper.updateById(task);
+        }
+    }
+
+    @Transactional(rollbackFor = Exception.class)
     public void markFailed(Long fileId, String message) {
         ProcessTask task = getByFileId(fileId);
         if (task != null) {

@@ -180,7 +180,7 @@ public class ChatService {
         String userPrompt = finalInstruction + "\n\n【文件内容】\n" + clipped;
         String answer = llmProvider.chatAsync(systemPrompt, userPrompt).block();
         String finalAnswer = StringUtils.hasText(answer)
-                ? answer.trim()
+                ? toPlainText(answer)
                 : "AI service is temporarily unavailable. Please check Ollama/model configuration and try again.";
         chatRecordService.saveAssistantAnswer(sid, finalAnswer, List.of());
         contextService.appendRound(userId, userQuestion, finalAnswer);
@@ -221,7 +221,7 @@ public class ChatService {
         String userPrompt = "用户问题：" + cleanQuestion + "\n\n【文件内容】\n" + clipped;
         String answer = llmProvider.chatAsync(systemPrompt, userPrompt).block();
         String finalAnswer = StringUtils.hasText(answer)
-                ? answer.trim()
+                ? toPlainText(answer)
                 : "AI service is temporarily unavailable. Please check Ollama/model configuration and try again.";
         chatRecordService.saveAssistantAnswer(sessionId, finalAnswer, List.of());
         contextService.appendRound(userId, userQuestion, finalAnswer);
@@ -272,6 +272,22 @@ public class ChatService {
         if (!owned) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "会话不存在");
         }
+    }
+
+    private String toPlainText(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return "";
+        }
+        return raw
+                .replace("\r", "")
+                .replaceAll("(?m)^#{1,6}\\s*", "")
+                .replaceAll("\\*\\*(.*?)\\*\\*", "$1")
+                .replaceAll("\\*(.*?)\\*", "$1")
+                .replaceAll("(?m)^\\s*[-*+]\\s+", "")
+                .replaceAll("(?m)^\\s*\\d+\\.\\s+", "")
+                .replace("`", "")
+                .replaceAll("\n{3,}", "\n\n")
+                .trim();
     }
 
     public record UploadSummaryResult(Long sessionId, String summary) {}

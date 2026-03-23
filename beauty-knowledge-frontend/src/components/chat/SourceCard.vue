@@ -1,6 +1,6 @@
 ﻿<template>
   <div class="card">
-    <div class="head">来源 · 文件{{ source.fileId }} · 第{{ source.pageNo }}页</div>
+    <div class="head">来源 · {{ source.fileName || ('文件' + source.fileId) }} · 第{{ source.pageNo }}页</div>
     <div class="body-wrap">
       <LinkifiedText class="body" :text="displayText" />
     </div>
@@ -11,7 +11,7 @@
 import { computed } from 'vue'
 import LinkifiedText from '../common/LinkifiedText.vue'
 
-const props = defineProps<{ source: { fileId: number; pageNo: number; content: string } }>()
+const props = defineProps<{ source: { fileId: number; fileName?: string; pageNo: number; content: string } }>()
 const MAX_LEN = 15
 
 const normalizedContent = computed(() => sanitizeSourceText(props.source.content || ''))

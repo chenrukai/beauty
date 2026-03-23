@@ -12,9 +12,11 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -63,7 +65,8 @@ public class HybridSearchService {
             vector = List.of();
         }
 
-        return rrfMerge(bm25, vector).stream().limit(rerankTop).toList();
+        List<ChunkResult> merged = rrfMerge(bm25, vector);
+        return rerank(question, merged).stream().limit(rerankTop).toList();
     }
 
     private List<ChunkResult> rrfMerge(List<ChunkResult> bm25, List<VectorSearchResult> vector) {
@@ -110,5 +113,68 @@ public class HybridSearchService {
             merged.get(i).setRank(i + 1);
         }
         return merged;
+    }
+
+    private List<ChunkResult> rerank(String question, List<ChunkResult> merged) {
+        if (merged == null || merged.isEmpty()) {
+            return List.of();
+        }
+        Set<Character> qChars = compactChars(question);
+        for (ChunkResult item : merged) {
+            String content = item == null ? "" : String.valueOf(item.getContent());
+            Set<Character> cChars = compactChars(content);
+            double overlap = overlapScore(qChars, cChars);
+            double base = item == null ? 0D : item.getScore();
+            double finalScore = base * 0.7D + overlap * 0.3D;
+            if (item != null) {
+                item.setScore(finalScore);
+            }
+        }
+        merged.sort(Comparator.comparingDouble(ChunkResult::getScore).reversed());
+        for (int i = 0; i < merged.size(); i++) {
+            merged.get(i).setRank(i + 1);
+        }
+        return merged;
+    }
+
+    private Set<Character> compactChars(String text) {
+        Set<Character> out = new LinkedHashSet<>();
+        if (text == null || text.isBlank()) {
+            return out;
+        }
+        for (char ch : text.toCharArray()) {
+            if (Character.isWhitespace(ch)) {
+                continue;
+            }
+            if (isPunctuation(ch)) {
+                continue;
+            }
+            out.add(Character.toLowerCase(ch));
+        }
+        return out;
+    }
+
+    private boolean isPunctuation(char c) {
+        int type = Character.getType(c);
+        return type == Character.CONNECTOR_PUNCTUATION
+                || type == Character.DASH_PUNCTUATION
+                || type == Character.START_PUNCTUATION
+                || type == Character.END_PUNCTUATION
+                || type == Character.OTHER_PUNCTUATION
+                || type == Character.INITIAL_QUOTE_PUNCTUATION
+                || type == Character.FINAL_QUOTE_PUNCTUATION;
+    }
+
+    private double overlapScore(Set<Character> q, Set<Character> c) {
+        if (q == null || c == null || q.isEmpty() || c.isEmpty()) {
+            return 0D;
+        }
+        int hit = 0;
+        for (Character qc : q) {
+            if (c.contains(qc)) {
+                hit++;
+            }
+        }
+        return (double) hit / (double) q.size();
     }
 }

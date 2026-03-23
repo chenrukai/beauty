@@ -7,6 +7,7 @@ import { useAuthStore } from './auth'
 export interface Source {
   chunkId: number
   fileId: number
+  fileName?: string
   pageNo: number
   content: string
 }
@@ -194,6 +195,7 @@ export const useChatStore = defineStore('chat', () => {
       .map((s: any) => ({
         chunkId: Number(s?.chunkId || 0),
         fileId: Number(s?.fileId || 0),
+        fileName: String(s?.fileName || ''),
         pageNo: Number(s?.pageNo || 0),
         content: String(s?.content || '')
       }))

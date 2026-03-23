@@ -20,6 +20,8 @@ import com.beauty.knowledge.module.cms.mapper.KbCategoryMapper;
 import com.beauty.knowledge.module.cms.mapper.KbFileMapper;
 import com.beauty.knowledge.module.cms.mapper.KbKnowledgeMapper;
 import com.beauty.knowledge.module.cms.mapper.ProcessTaskMapper;
+import com.beauty.knowledge.module.entity.domain.entity.EntityExtractPending;
+import com.beauty.knowledge.module.entity.mapper.EntityExtractPendingMapper;
 import com.beauty.knowledge.module.cms.service.FileService;
 import com.beauty.knowledge.module.pipeline.domain.mq.ProcessMessage;
 import lombok.RequiredArgsConstructor;
@@ -48,15 +50,16 @@ public class FileServiceImpl implements FileService {
     private final RabbitTemplate rabbitTemplate;
     private final MinioStorageService minioStorageService;
     private final MilvusVectorStore milvusVectorStore;
+    private final EntityExtractPendingMapper entityExtractPendingMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public FileUploadVO upload(MultipartFile file, Long knowledgeId, Long categoryId, String fileType) {
         if (file == null || file.isEmpty()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "上传文件不能为空");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "uploaded file is empty");
         }
         if (knowledgeId == null) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "knowledgeId不能为空");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "knowledgeId is required");
         }
 
         KbKnowledge knowledge = kbKnowledgeMapper.selectById(knowledgeId);
@@ -66,10 +69,10 @@ public class FileServiceImpl implements FileService {
         if (categoryId != null) {
             KbCategory category = kbCategoryMapper.selectById(categoryId);
             if (category == null) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "分类节点不存在");
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "category node not found");
             }
             if (!Integer.valueOf(1).equals(category.getStatus())) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "该分类节点已停用，不能用于文件上传");
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "category is disabled and cannot be used for upload");
             }
         }
 
@@ -77,10 +80,10 @@ public class FileServiceImpl implements FileService {
         validateFileExtension(detectedType, file.getOriginalFilename());
         String knowledgeType = normalizeKnowledgeType(knowledge.getType());
         String uploadMappedType = mapUploadTypeToKnowledgeType(detectedType);
-        if (!knowledgeType.equals(uploadMappedType)) {
+        if (!isKnowledgeTypeCompatible(knowledgeType, uploadMappedType)) {
             throw new BusinessException(
                     ErrorCode.BAD_REQUEST,
-                    "文件类型与知识类型不一致：知识=" + knowledgeType + "，文件=" + uploadMappedType
+                    "file type is incompatible with knowledge type: knowledge=" + knowledgeType + ", file=" + uploadMappedType
             );
         }
 
@@ -146,7 +149,7 @@ public class FileServiceImpl implements FileService {
         } catch (BusinessException ex) {
             throw ex;
         } catch (Exception ex) {
-            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "文件上传失败");
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "file upload failed");
         }
     }
 
@@ -154,7 +157,7 @@ public class FileServiceImpl implements FileService {
     public ProcessTaskViewVO getTask(Long taskId) {
         ProcessTask task = processTaskMapper.selectById(taskId);
         if (task == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "任务不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "task not found");
         }
         ProcessTaskViewVO view = toTaskView(task);
         if (view == null) {
@@ -185,7 +188,7 @@ public class FileServiceImpl implements FileService {
     public void retry(Long taskId) {
         ProcessTask task = processTaskMapper.selectById(taskId);
         if (task == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "任务不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "task not found");
         }
         if (!"FAILED".equalsIgnoreCase(task.getStatus())) {
             throw new BusinessException(ErrorCode.FILE_PROCESSING);
@@ -193,7 +196,7 @@ public class FileServiceImpl implements FileService {
 
         KbFile kbFile = kbFileMapper.selectById(task.getFileId());
         if (kbFile == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "文件不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "file not found");
         }
 
         task.setStatus("PENDING");
@@ -222,7 +225,7 @@ public class FileServiceImpl implements FileService {
     public void remove(Long fileId) {
         KbFile file = kbFileMapper.selectById(fileId);
         if (file == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "文件不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "file not found");
         }
 
         milvusVectorStore.deleteByFileId(fileId);
@@ -246,6 +249,18 @@ public class FileServiceImpl implements FileService {
         if (knowledge == null) {
             return null;
         }
+        int pendingEntityCount = countEntityByStatus(task.getFileId(), "PENDING");
+        int confirmedEntityCount = countEntityByStatus(task.getFileId(), "CONFIRMED");
+        int rejectedEntityCount = countEntityByStatus(task.getFileId(), "REJECTED");
+        String stageCode = resolveStageCode(task, pendingEntityCount, confirmedEntityCount, rejectedEntityCount);
+        String stageText = stageText(stageCode);
+        boolean canRetry = canRetry(task);
+        boolean canReExtract = canReExtract(task);
+        boolean canConfirm = pendingEntityCount > 0;
+        String failureReason = ("PARSE_FAILED".equals(stageCode) || "FAILED".equalsIgnoreCase(task.getStatus()))
+                ? task.getResultMsg()
+                : null;
+
         return ProcessTaskViewVO.builder()
                 .id(task.getId())
                 .fileId(task.getFileId())
@@ -254,8 +269,17 @@ public class FileServiceImpl implements FileService {
                 .knowledgeTitle(knowledge == null ? null : knowledge.getTitle())
                 .taskType(task.getTaskType())
                 .status(task.getStatus())
+                .stageCode(stageCode)
+                .stageText(stageText)
                 .progress(task.getProgress())
                 .resultMsg(task.getResultMsg())
+                .failureReason(failureReason)
+                .canRetry(canRetry)
+                .canReExtract(canReExtract)
+                .canConfirm(canConfirm)
+                .pendingEntityCount(pendingEntityCount)
+                .confirmedEntityCount(confirmedEntityCount)
+                .rejectedEntityCount(rejectedEntityCount)
                 .retryCount(task.getRetryCount())
                 .maxRetry(task.getMaxRetry())
                 .startedAt(task.getStartedAt())
@@ -265,11 +289,78 @@ public class FileServiceImpl implements FileService {
                 .build();
     }
 
+    private int countEntityByStatus(Long fileId, String status) {
+        if (fileId == null || fileId <= 0) {
+            return 0;
+        }
+        Long c = entityExtractPendingMapper.selectCount(new LambdaQueryWrapper<EntityExtractPending>()
+                .eq(EntityExtractPending::getFileId, fileId)
+                .eq(EntityExtractPending::getStatus, status));
+        return c == null ? 0 : c.intValue();
+    }
+
+    private String resolveStageCode(ProcessTask task, int pending, int confirmed, int rejected) {
+        String taskType = String.valueOf(task.getTaskType()).toUpperCase();
+        String status = String.valueOf(task.getStatus()).toUpperCase();
+        if ("KNOWLEDGE_CREATE".equals(taskType)) {
+            return "CONFIRMED";
+        }
+        if (status.contains("FAIL") || status.contains("ERROR")) {
+            return "PARSE_FAILED";
+        }
+        if ("EXTRACTING".equals(status)) {
+            return "EXTRACTING";
+        }
+        if (status.contains("PROCESS") || status.contains("RUN")) {
+            return "PARSING";
+        }
+        if (status.contains("PENDING")) {
+            return "UPLOADED";
+        }
+        if (pending > 0) {
+            return "PENDING_CONFIRM";
+        }
+        if (confirmed > 0 && pending == 0) {
+            return "CONFIRMED";
+        }
+        if (rejected > 0 && pending == 0 && confirmed == 0) {
+            return "CONFIRMED";
+        }
+        return "PARSE_SUCCESS";
+    }
+
+    private String stageText(String stageCode) {
+        return switch (stageCode) {
+            case "UPLOADED" -> "上传";
+            case "PARSING" -> "解析中";
+            case "PARSE_SUCCESS" -> "解析成功";
+            case "PARSE_FAILED" -> "解析失败";
+            case "EXTRACTING" -> "抽取中";
+            case "PENDING_CONFIRM" -> "待确认";
+            case "CONFIRMED" -> "已确认";
+            default -> "未知";
+        };
+    }
+
+    private boolean canRetry(ProcessTask task) {
+        String s = String.valueOf(task.getStatus()).toUpperCase();
+        return s.contains("FAIL") || s.contains("ERROR");
+    }
+
+    private boolean canReExtract(ProcessTask task) {
+        if (task == null || task.getFileId() == null || task.getFileId() <= 0) {
+            return false;
+        }
+        String type = String.valueOf(task.getTaskType()).toUpperCase();
+        String status = String.valueOf(task.getStatus()).toUpperCase();
+        return "KNOWLEDGE_PROCESS".equals(type) && "SUCCESS".equals(status);
+    }
+
     private String resolveFileType(String requestFileType, String originalName) {
         if (StringUtils.hasText(requestFileType) && !"auto".equalsIgnoreCase(requestFileType)) {
             String normalized = requestFileType.toLowerCase();
             if ("audio".equals(normalized) || "video".equals(normalized)) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "音频/视频上传暂不支持");
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "audio/video upload is not supported");
             }
             return normalized;
         }
@@ -358,9 +449,36 @@ public class FileServiceImpl implements FileService {
         return "DOC_WORD";
     }
 
+    private boolean isKnowledgeTypeCompatible(String knowledgeType, String uploadType) {
+        if (knowledgeType.equals(uploadType)) {
+            return true;
+        }
+        // Document knowledge accepts common document/text uploads to avoid hard blocking by legacy type values.
+        if (isDocumentKnowledgeType(knowledgeType) && isDocumentUploadType(uploadType)) {
+            return true;
+        }
+        return false;
+    }
+
+    private boolean isDocumentKnowledgeType(String type) {
+        return "DOC_PDF".equals(type)
+                || "DOC_WORD".equals(type)
+                || "DOC_PPT".equals(type)
+                || "DOC_EXCEL".equals(type);
+    }
+
+    private boolean isDocumentUploadType(String type) {
+        return "DOC_PDF".equals(type)
+                || "DOC_WORD".equals(type)
+                || "DOC_PPT".equals(type)
+                || "DOC_EXCEL".equals(type)
+                || "TEXT_TXT".equals(type)
+                || "TEXT_MD".equals(type);
+    }
+
     private void validateFileExtension(String uploadType, String originalName) {
         if (!StringUtils.hasText(originalName)) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件名不能为空");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "original file name is required");
         }
         String name = originalName.toLowerCase();
         boolean ok = switch (uploadType) {
@@ -374,7 +492,7 @@ public class FileServiceImpl implements FileService {
             default -> false;
         };
         if (!ok) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件扩展名与文件类型不匹配");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "file extension does not match declared file type");
         }
     }
 
@@ -387,3 +505,4 @@ public class FileServiceImpl implements FileService {
         return false;
     }
 }
+

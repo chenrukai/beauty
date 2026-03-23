@@ -33,9 +33,10 @@ export const useEntityStore = defineStore('entity', () => {
   }
 
   async function confirm(items: Array<{ pendingId: number; accept: boolean }>, status?: string) {
-    await request.post('/entity/confirm', { items })
+    const res = await request.post('/entity/confirm', { items })
     await fetchPending(status)
     await fetchPendingCount()
+    return res.data || { total: items.length, successCount: items.length, failedCount: 0, itemResults: [] }
   }
 
   return { pendingList, ingredientList, productList, pendingCount, fetchPending, fetchPendingCount, fetchIngredient, fetchProduct, confirm }

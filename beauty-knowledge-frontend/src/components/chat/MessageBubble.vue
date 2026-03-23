@@ -31,11 +31,11 @@ defineProps<{ role: 'user' | 'assistant' }>()
 }
 
 html[data-theme='night'] .bubble {
-  --bubble-user-bg: #b6e7cf;
-  --bubble-user-text: #0f172a;
-  --bubble-assistant-bg: #e5e7eb;
-  --bubble-assistant-border: #cbd5e1;
-  --bubble-assistant-text: #111827;
+  --bubble-user-bg: #2d4e68;
+  --bubble-user-text: #eef6ff;
+  --bubble-assistant-bg: #1f2d40;
+  --bubble-assistant-border: #35506e;
+  --bubble-assistant-text: #e7f0ff;
 }
 
 html[data-theme='eye'] .bubble {

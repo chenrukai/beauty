@@ -1,6 +1,7 @@
 package com.beauty.knowledge.module.entity.controller;
 
 import com.beauty.knowledge.common.result.Result;
+import com.beauty.knowledge.module.entity.domain.dto.EntityConfirmBatchResultDTO;
 import com.beauty.knowledge.module.entity.domain.dto.EntityConfirmRequest;
 import com.beauty.knowledge.module.entity.domain.dto.EntityExtractRequest;
 import com.beauty.knowledge.module.entity.domain.entity.BeautyEffect;
@@ -149,9 +150,8 @@ public class EntityController {
     @Operation(summary = "批量确认实体")
     @PreAuthorize("hasRole('admin')")
     @PostMapping("/confirm")
-    public Result<Void> confirm(@Valid @RequestBody EntityConfirmRequest request) {
-        entityConfirmService.confirmBatch(request.getItems());
-        return Result.success();
+    public Result<EntityConfirmBatchResultDTO> confirm(@Valid @RequestBody EntityConfirmRequest request) {
+        return Result.success(entityConfirmService.confirmBatch(request.getItems()));
     }
 
     @Operation(summary = "执行实体抽取")
@@ -160,5 +160,21 @@ public class EntityController {
     public Result<Void> extract(@Valid @RequestBody EntityExtractRequest request) {
         entityExtractService.extractByText(request.getFileId(), request.getText());
         return Result.success();
+    }
+
+    @Operation(summary = "按文件ID重新抽取实体")
+    @PreAuthorize("hasRole('admin')")
+    @PostMapping("/extract/file/{fileId}")
+    public Result<Map<String, Object>> extractByFile(@PathVariable Long fileId) {
+        EntityExtractService.ExtractStat stat = entityExtractService.extractByFileId(fileId);
+        String message = stat.insertedCount() > 0
+                ? "重抽取完成，新增待确认实体 " + stat.insertedCount() + " 条"
+                : "重抽取完成，但未命中可抽取词（或已存在待确认记录）";
+        return Result.success(Map.of(
+                "fileId", fileId,
+                "matchedCount", stat.matchedCount(),
+                "insertedCount", stat.insertedCount(),
+                "message", message
+        ));
     }
 }

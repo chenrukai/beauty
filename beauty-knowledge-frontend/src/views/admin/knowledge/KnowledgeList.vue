@@ -46,11 +46,6 @@
 
     <el-table :data="store.knowledgeList" stripe>
       <el-table-column prop="title" label="标题" min-width="220" show-overflow-tooltip />
-      <el-table-column label="类型" width="110">
-        <template #default="{ row }">
-          {{ normalizeType(row.type) }}
-        </template>
-      </el-table-column>
       <el-table-column prop="status" label="状态" width="110">
         <template #default="{ row }">
           <el-tag :type="statusTag(Number(row.status))">
@@ -107,7 +102,6 @@
     <template v-if="detail">
       <el-descriptions :column="1" border>
         <el-descriptions-item label="标题">{{ detail.title }}</el-descriptions-item>
-        <el-descriptions-item label="类型">{{ normalizeType(detail.type) }}</el-descriptions-item>
         <el-descriptions-item label="状态">{{ statusText(Number(detail.status)) }}</el-descriptions-item>
         <el-descriptions-item label="摘要">{{ detail.summary || '-' }}</el-descriptions-item>
       </el-descriptions>
@@ -236,14 +230,6 @@ const flatCategories = computed(() => {
   return out
 })
 
-function normalizeType(type?: string) {
-  const t = (type || '').toUpperCase()
-  if (t === 'PDF') return 'DOC_PDF'
-  if (t === 'DOC') return 'DOC_WORD'
-  if (t === 'TEXT') return 'TEXT_TXT'
-  if (['TEXT_TXT', 'TEXT_MD', 'DOC_PDF', 'DOC_WORD', 'DOC_PPT', 'DOC_EXCEL', 'IMAGE'].includes(t)) return t
-  return 'TEXT_TXT'
-}
 
 function buildParams(page: number) {
   const params: any = { pageNum: page, pageSize: pageSize.value }
@@ -394,3 +380,4 @@ async function submitCreate() {
   color: #0f172a;
 }
 </style>
+

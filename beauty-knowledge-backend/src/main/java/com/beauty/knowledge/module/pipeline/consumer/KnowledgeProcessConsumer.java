@@ -73,6 +73,7 @@ public class KnowledgeProcessConsumer {
             }
             try {
                 // Auto-generate pending entity confirmation items after successful parsing.
+                processTaskService.markExtracting(fileId);
                 entityExtractService.extractByText(fileId, text);
             } catch (Exception extractEx) {
                 log.warn("Entity extraction skipped. fileId={}, reason={}", fileId, extractEx.getMessage());

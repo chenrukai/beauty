@@ -13,6 +13,7 @@ public class ChunkResult {
 
     private Long chunkId;
     private Long fileId;
+    private String fileName;
     private Integer pageNo;
     private Integer chunkIndex;
     private String content;

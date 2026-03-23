@@ -5,46 +5,52 @@
 <mapper namespace="com.beauty.knowledge.module.rag.mapper.KbChunkSearchMapper">
 
     <select id="fullTextSearch" resultType="com.beauty.knowledge.module.rag.domain.dto.ChunkResult">
-        SELECT id                 AS chunkId,
-               file_id            AS fileId,
-               page_no            AS pageNo,
-               chunk_index        AS chunkIndex,
-               content            AS content,
-               MATCH(content) AGAINST(#{keyword} IN BOOLEAN MODE) AS score,
+        SELECT c.id                 AS chunkId,
+               c.file_id            AS fileId,
+               f.original_name      AS fileName,
+               c.page_no            AS pageNo,
+               c.chunk_index        AS chunkIndex,
+               c.content            AS content,
+               MATCH(c.content) AGAINST(#{keyword} IN BOOLEAN MODE) AS score,
                0                  AS `rank`
-        FROM kb_chunk
-        WHERE MATCH(content) AGAINST(#{keyword} IN BOOLEAN MODE)
-        ORDER BY score DESC, id DESC
+        FROM kb_chunk c
+                 LEFT JOIN kb_file f ON c.file_id = f.id
+        WHERE MATCH(c.content) AGAINST(#{keyword} IN BOOLEAN MODE)
+        ORDER BY score DESC, c.id DESC
         LIMIT #{topk}
     </select>
 
     <select id="selectByIds" resultType="com.beauty.knowledge.module.rag.domain.dto.ChunkResult">
-        SELECT id      AS chunkId,
-               file_id AS fileId,
-               page_no AS pageNo,
-               chunk_index AS chunkIndex,
-               content AS content,
+        SELECT c.id      AS chunkId,
+               c.file_id AS fileId,
+               f.original_name AS fileName,
+               c.page_no AS pageNo,
+               c.chunk_index AS chunkIndex,
+               c.content AS content,
                0       AS score,
                0       AS `rank`
-        FROM kb_chunk
-        WHERE id IN
+        FROM kb_chunk c
+                 LEFT JOIN kb_file f ON c.file_id = f.id
+        WHERE c.id IN
         <foreach collection="ids" item="id" open="(" separator="," close=")">
             #{id}
         </foreach>
     </select>
 
     <select id="selectContextByRange" resultType="com.beauty.knowledge.module.rag.domain.dto.ChunkResult">
-        SELECT id          AS chunkId,
-               file_id     AS fileId,
-               page_no     AS pageNo,
-               chunk_index AS chunkIndex,
-               content     AS content,
+        SELECT c.id          AS chunkId,
+               c.file_id     AS fileId,
+               f.original_name AS fileName,
+               c.page_no     AS pageNo,
+               c.chunk_index AS chunkIndex,
+               c.content     AS content,
                0           AS score,
                0           AS `rank`
-        FROM kb_chunk
-        WHERE file_id = #{fileId}
-          AND chunk_index BETWEEN #{startChunkIndex} AND #{endChunkIndex}
-        ORDER BY chunk_index ASC, id ASC
+        FROM kb_chunk c
+                 LEFT JOIN kb_file f ON c.file_id = f.id
+        WHERE c.file_id = #{fileId}
+          AND c.chunk_index BETWEEN #{startChunkIndex} AND #{endChunkIndex}
+        ORDER BY c.chunk_index ASC, c.id ASC
         LIMIT #{limit}
     </select>
 </mapper>
