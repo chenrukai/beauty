@@ -33,7 +33,7 @@ public class PromptService {
 
         if (sources == null || sources.isEmpty()) {
             return rolePrompt + "\n" + answerRule
-                    + "\nNo KB chunks are available. Answer from general skincare knowledge only.";
+                    + "\nNo KB chunks are available. Reply that the knowledge base has no relevant information.";
         }
 
         StringBuilder sourcePrompt = new StringBuilder();

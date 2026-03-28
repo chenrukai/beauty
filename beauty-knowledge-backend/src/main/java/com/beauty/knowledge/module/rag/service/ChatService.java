@@ -27,10 +27,14 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.Map;
+import java.util.HashSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.apache.tika.Tika;
 
 @Service
@@ -60,11 +64,12 @@ public class ChatService {
     private int uploadAskMaxChars;
 
     private final Map<Long, UploadContext> uploadContextBySession = new ConcurrentHashMap<>();
+    private static final Pattern MONEY_PATTERN = Pattern.compile("(?<!\\d)(\\d{3,6})(?:\\.\\d{1,2})?(?!\\d)");
 
     public Flux<ChatStreamChunk> streamChat(Long userId, ChatRequest request) {
         LLMProvider llmProvider = llmProviderObjectProvider.getIfAvailable();
         if (llmProvider == null) {
-            throw new BusinessException(ErrorCode.AI_SERVICE_UNAVAILABLE, "未找到可用的LLMProvider");
+            throw new BusinessException(ErrorCode.AI_SERVICE_UNAVAILABLE, "鏈壘鍒板彲鐢ㄧ殑LLMProvider");
         }
 
         Long sessionId = chatSessionService.getOrCreate(userId, request.getSessionId(), request.getQuestion());
@@ -72,7 +77,8 @@ public class ChatService {
 
         IntentType intent = intentService.detect(request.getQuestion());
         List<ChunkResult> sources = hybridSearchService.search(request.getQuestion(), request.getCategoryId());
-        String systemPrompt = promptService.buildSystemPrompt(intent, sources);
+        List<ChunkResult> filteredSources = filterSourcesByQuestion(sources, request.getQuestion());
+        String systemPrompt = promptService.buildSystemPrompt(intent, filteredSources);
         List<com.beauty.knowledge.infrastructure.ai.llm.dto.ChatMessage> history = contextService.getRecentHistory(userId).stream()
                 .map(h -> com.beauty.knowledge.infrastructure.ai.llm.dto.ChatMessage.builder()
                         .role(h.getRole())
@@ -104,7 +110,7 @@ public class ChatService {
                     String finalAnswer = (answer == null || answer.isBlank())
                             ? "AI service is temporarily unavailable. Please check Ollama/model configuration and try again."
                             : answer;
-                    List<ChunkResult> displaySources = buildDisplaySources(sources);
+                    List<ChunkResult> displaySources = buildDisplaySources(filteredSources);
                     chatRecordService.saveAssistantAnswer(sessionId, finalAnswer, displaySources);
                     contextService.appendRound(userId, request.getQuestion(), finalAnswer);
                     return ChatStreamChunk.builder()
@@ -142,46 +148,45 @@ public class ChatService {
 
     public UploadSummaryResult summarizeUpload(Long userId, MultipartFile file, String instruction, Long sessionId) {
         if (file == null || file.isEmpty()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "上传文件不能为空");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "涓婁紶鏂囦欢涓嶈兘涓虹┖");
         }
         LLMProvider llmProvider = llmProviderObjectProvider.getIfAvailable();
         if (llmProvider == null) {
-            throw new BusinessException(ErrorCode.AI_SERVICE_UNAVAILABLE, "未找到可用的LLMProvider");
+            throw new BusinessException(ErrorCode.AI_SERVICE_UNAVAILABLE, "鏈壘鍒板彲鐢ㄧ殑LLMProvider");
         }
 
         String extractedText = extractUploadText(file);
         if (!StringUtils.hasText(extractedText)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "文件内容为空或无法解析");
         }
+        PriceFacts facts = extractPriceFacts(extractedText);
         String clipped = extractedText.length() > uploadSummaryMaxChars
                 ? extractedText.substring(0, uploadSummaryMaxChars)
                 : extractedText;
 
         String finalInstruction = StringUtils.hasText(instruction)
                 ? instruction.trim()
-                : "请总结这个文件内容";
+                : "璇锋€荤粨杩欎釜鏂囦欢鍐呭";
         Long sid = chatSessionService.getOrCreate(userId, sessionId, finalInstruction);
         uploadContextBySession.put(sid, new UploadContext(
                 safeFileName(file.getOriginalFilename()),
-                extractedText
+                extractedText,
+                facts
         ));
         String userQuestion = finalInstruction + "（附件：" + safeFileName(file.getOriginalFilename()) + "）";
         chatRecordService.saveUserQuestion(sid, userQuestion);
 
         String systemPrompt = """
-                你是文档总结助手。请严格基于用户上传文件内容回答。
-                输出必须是纯文本，不要使用 Markdown 符号（如 #、*、-、数字列表前缀）。
-                结构要求：
-                结论：
-                关键要点：
-                行动建议：
-                若文件信息不足，明确指出不足，不要编造。
-                """;
-        String userPrompt = finalInstruction + "\n\n【文件内容】\n" + clipped;
+                浣犳槸鏂囨。鎬荤粨鍔╂墜銆傝涓ユ牸鍩轰簬鐢ㄦ埛涓婁紶鏂囦欢鍐呭鍥炵瓟銆?                杈撳嚭蹇呴』鏄函鏂囨湰锛屼笉瑕佷娇鐢?Markdown 绗﹀彿锛堝 #銆?銆?銆佹暟瀛楀垪琛ㄥ墠缂€锛夈€?                缁撴瀯瑕佹眰锛?                缁撹锛?                鍏抽敭瑕佺偣锛?                琛屽姩寤鸿锛?                鑻ユ枃浠朵俊鎭笉瓒筹紝鏄庣‘鎸囧嚭涓嶈冻锛屼笉瑕佺紪閫犮€?                """;
+        String userPrompt = finalInstruction
+                + "\n\n【结构化价格事实（优先使用）】\n"
+                + renderPriceFactsForPrompt(facts)
+                + "\n\n銆愭枃浠跺唴瀹广€慭n" + clipped;
         String answer = llmProvider.chatAsync(systemPrompt, userPrompt).block();
-        String finalAnswer = StringUtils.hasText(answer)
+        String rawAnswer = StringUtils.hasText(answer)
                 ? toPlainText(answer)
                 : "AI service is temporarily unavailable. Please check Ollama/model configuration and try again.";
+        String finalAnswer = enforcePriceFactConsistency(rawAnswer, facts);
         chatRecordService.saveAssistantAnswer(sid, finalAnswer, List.of());
         contextService.appendRound(userId, userQuestion, finalAnswer);
         return new UploadSummaryResult(sid, finalAnswer);
@@ -189,40 +194,41 @@ public class ChatService {
 
     public UploadAskResult askByUploadedDocument(Long userId, Long sessionId, String question) {
         if (sessionId == null) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "sessionId不能为空");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "sessionId涓嶈兘涓虹┖");
         }
         if (!StringUtils.hasText(question)) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "问题不能为空");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "闂涓嶈兘涓虹┖");
         }
         ensureSessionOwned(userId, sessionId);
         UploadContext ctx = uploadContextBySession.get(sessionId);
         if (ctx == null || !StringUtils.hasText(ctx.content())) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "当前会话没有上传文件上下文，请先上传文件");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "褰撳墠浼氳瘽娌℃湁涓婁紶鏂囦欢涓婁笅鏂囷紝璇峰厛涓婁紶鏂囦欢");
         }
 
         LLMProvider llmProvider = llmProviderObjectProvider.getIfAvailable();
         if (llmProvider == null) {
-            throw new BusinessException(ErrorCode.AI_SERVICE_UNAVAILABLE, "未找到可用的LLMProvider");
+            throw new BusinessException(ErrorCode.AI_SERVICE_UNAVAILABLE, "鏈壘鍒板彲鐢ㄧ殑LLMProvider");
         }
 
         String clipped = ctx.content().length() > uploadAskMaxChars
                 ? ctx.content().substring(0, uploadAskMaxChars)
                 : ctx.content();
+        PriceFacts facts = ctx.facts() == null ? extractPriceFacts(ctx.content()) : ctx.facts();
         String cleanQuestion = question.trim();
         String userQuestion = cleanQuestion + "（基于附件：" + ctx.fileName() + "）";
         chatRecordService.saveUserQuestion(sessionId, userQuestion);
 
         String systemPrompt = """
-                你是文档问答助手。请仅依据用户上传的文件内容回答。
-                不要编造文件里没有的信息。
-                输出必须是纯文本，不要使用 Markdown 符号（如 #、*、-、数字列表前缀）。
-                若文件中找不到答案，请明确回复“文件中未找到该信息”。
-                """;
-        String userPrompt = "用户问题：" + cleanQuestion + "\n\n【文件内容】\n" + clipped;
+                浣犳槸鏂囨。闂瓟鍔╂墜銆傝浠呬緷鎹敤鎴蜂笂浼犵殑鏂囦欢鍐呭鍥炵瓟銆?                涓嶈缂栭€犳枃浠堕噷娌℃湁鐨勪俊鎭€?                杈撳嚭蹇呴』鏄函鏂囨湰锛屼笉瑕佷娇鐢?Markdown 绗﹀彿锛堝 #銆?銆?銆佹暟瀛楀垪琛ㄥ墠缂€锛夈€?                鑻ユ枃浠朵腑鎵句笉鍒扮瓟妗堬紝璇锋槑纭洖澶嶁€滄枃浠朵腑鏈壘鍒拌淇℃伅鈥濄€?                """;
+        String userPrompt = "用户问题：" + cleanQuestion
+                + "\n\n【结构化价格事实（优先使用）】\n"
+                + renderPriceFactsForPrompt(facts)
+                + "\n\n銆愭枃浠跺唴瀹广€慭n" + clipped;
         String answer = llmProvider.chatAsync(systemPrompt, userPrompt).block();
-        String finalAnswer = StringUtils.hasText(answer)
+        String rawAnswer = StringUtils.hasText(answer)
                 ? toPlainText(answer)
                 : "AI service is temporarily unavailable. Please check Ollama/model configuration and try again.";
+        String finalAnswer = enforcePriceFactConsistency(rawAnswer, facts);
         chatRecordService.saveAssistantAnswer(sessionId, finalAnswer, List.of());
         contextService.appendRound(userId, userQuestion, finalAnswer);
         return new UploadAskResult(sessionId, finalAnswer, ctx.fileName());
@@ -231,7 +237,10 @@ public class ChatService {
     private String extractUploadText(MultipartFile file) {
         try {
             byte[] bytes = file.getBytes();
-            if (isImage(file)) {
+            boolean image = isImage(file);
+            boolean video = isVideo(file);
+            boolean audio = isAudio(file);
+            if (image) {
                 try {
                     String ocr = pythonAIClient.ocr(bytes);
                     if (StringUtils.hasText(ocr)) {
@@ -241,10 +250,46 @@ public class ChatService {
                     // fallback to tika
                 }
             }
+            if (video) {
+                try {
+                    String text = pythonAIClient.transcribe(bytes, "video");
+                    if (StringUtils.hasText(text)) {
+                        return text.replace("\u0000", " ").trim();
+                    }
+                } catch (Exception ignore) {
+                    // fallback to tika
+                }
+            }
+            if (audio) {
+                try {
+                    String text = pythonAIClient.transcribe(bytes, "audio");
+                    if (StringUtils.hasText(text)) {
+                        return text.replace("\u0000", " ").trim();
+                    }
+                } catch (Exception ignore) {
+                    // fallback to tika
+                }
+            }
             String parsed = tika.parseToString(new ByteArrayInputStream(bytes));
-            return parsed == null ? "" : parsed.replace("\u0000", " ").trim();
+            String clean = parsed == null ? "" : parsed.replace("\u0000", " ").trim();
+            if (image && !StringUtils.hasText(clean)) {
+                throw new BusinessException(
+                        ErrorCode.BAD_REQUEST,
+                        "IMAGE_TEXT_EMPTY: 当前仅支持图片文字识别，未检测到可识别文字。请上传包含清晰文字的图片，或改用文档后再提问。"
+                );
+            }
+            if ((video || audio) && !StringUtils.hasText(clean)) {
+                throw new BusinessException(
+                        ErrorCode.BAD_REQUEST,
+                        "TRANSCRIBE_UNAVAILABLE: 褰撳墠鐜鏈惎鐢ㄨ棰?闊抽杞啓鏈嶅姟锛岃妫€鏌?Python transcribe 鎺ュ彛涓?ffmpeg"
+                );
+            }
+            return clean;
         } catch (Exception e) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件解析失败");
+            if (e instanceof BusinessException be) {
+                throw be;
+            }
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "鏂囦欢瑙ｆ瀽澶辫触");
         }
     }
 
@@ -262,6 +307,34 @@ public class ChatService {
                 || name.endsWith(".gif");
     }
 
+    private boolean isVideo(MultipartFile file) {
+        String contentType = file.getContentType();
+        if (contentType != null && contentType.toLowerCase().startsWith("video/")) {
+            return true;
+        }
+        String name = safeFileName(file.getOriginalFilename()).toLowerCase();
+        return name.endsWith(".mp4")
+                || name.endsWith(".mov")
+                || name.endsWith(".avi")
+                || name.endsWith(".mkv")
+                || name.endsWith(".webm")
+                || name.endsWith(".m4v");
+    }
+
+    private boolean isAudio(MultipartFile file) {
+        String contentType = file.getContentType();
+        if (contentType != null && contentType.toLowerCase().startsWith("audio/")) {
+            return true;
+        }
+        String name = safeFileName(file.getOriginalFilename()).toLowerCase();
+        return name.endsWith(".mp3")
+                || name.endsWith(".wav")
+                || name.endsWith(".m4a")
+                || name.endsWith(".aac")
+                || name.endsWith(".flac")
+                || name.endsWith(".ogg");
+    }
+
     private String safeFileName(String name) {
         return StringUtils.hasText(name) ? name.trim() : "未命名文件";
     }
@@ -272,6 +345,117 @@ public class ChatService {
         if (!owned) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "会话不存在");
         }
+    }
+
+    private PriceFacts extractPriceFacts(String text) {
+        if (!StringUtils.hasText(text)) {
+            return new PriceFacts(List.of(), List.of(), Set.of());
+        }
+        List<String> promo = new ArrayList<>();
+        List<String> original = new ArrayList<>();
+        Set<String> all = new LinkedHashSet<>();
+        String[] lines = text.split("\\r?\\n");
+        for (String line : lines) {
+            if (!StringUtils.hasText(line)) {
+                continue;
+            }
+            String normalized = line.replaceAll("\\s+", "");
+            List<String> amounts = extractMoneyNumbers(normalized);
+            if (amounts.isEmpty()) {
+                continue;
+            }
+            boolean hasPromo = containsAny(normalized, "秒杀价", "活动价", "折后价", "到手价", "团购价", "特价", "优惠价", "限时价");
+            boolean hasOriginal = containsAny(normalized, "原价", "门市价", "吊牌价", "划线价");
+            all.addAll(amounts);
+            if (hasPromo) {
+                promo.addAll(amounts);
+            } else if (hasOriginal) {
+                original.addAll(amounts);
+            }
+        }
+        // Fallback: if labels are missing, infer by magnitude (smaller as promo, larger as original).
+        if (promo.isEmpty() && original.isEmpty() && all.size() >= 2) {
+            List<Integer> nums = all.stream().map(Integer::parseInt).sorted().toList();
+            promo.add(String.valueOf(nums.get(0)));
+            original.add(String.valueOf(nums.get(nums.size() - 1)));
+        }
+        return new PriceFacts(
+                new ArrayList<>(new LinkedHashSet<>(promo)),
+                new ArrayList<>(new LinkedHashSet<>(original)),
+                new LinkedHashSet<>(all)
+        );
+    }
+
+    private List<String> extractMoneyNumbers(String text) {
+        List<String> out = new ArrayList<>();
+        Matcher m = MONEY_PATTERN.matcher(text);
+        while (m.find()) {
+            out.add(m.group(1));
+        }
+        return out;
+    }
+
+    private boolean containsAny(String text, String... keywords) {
+        for (String k : keywords) {
+            if (text.contains(k)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String renderPriceFactsForPrompt(PriceFacts facts) {
+        if (facts == null || facts.allPrices().isEmpty()) {
+            return "未提取到明确价格；若内容涉及价格，请明确说明不确定。";
+        }
+        String promo = facts.promoPrices().isEmpty() ? "未识别" : String.join("、", withYuan(facts.promoPrices()));
+        String original = facts.originalPrices().isEmpty() ? "未识别" : String.join("、", withYuan(facts.originalPrices()));
+        return "活动/秒杀价: " + promo + "\n原价: " + original + "\n可引用价格全集: " + String.join("、", withYuan(new ArrayList<>(facts.allPrices())));
+    }
+
+    private List<String> withYuan(List<String> prices) {
+        List<String> out = new ArrayList<>();
+        for (String p : prices) {
+            out.add(p + "元");
+        }
+        return out;
+    }
+
+    private String enforcePriceFactConsistency(String answer, PriceFacts facts) {
+        if (!StringUtils.hasText(answer) || facts == null || facts.allPrices().isEmpty()) {
+            return answer;
+        }
+        Set<String> allowed = new HashSet<>(facts.allPrices());
+        String[] sentences = answer.split("[。！？\\n]");
+        for (String sentence : sentences) {
+            if (!containsAny(sentence, "价", "元", "价格", "优惠", "折后", "秒杀")) {
+                continue;
+            }
+            Matcher m = MONEY_PATTERN.matcher(sentence);
+            while (m.find()) {
+                String n = m.group(1);
+                if (!allowed.contains(n)) {
+                    return buildPriceSafeFallback(facts, answer);
+                }
+            }
+        }
+        return answer;
+    }
+
+    private String buildPriceSafeFallback(PriceFacts facts, String originalAnswer) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("结论：图片中价格信息已按可识别事实校正。\n");
+        if (!facts.promoPrices().isEmpty()) {
+            sb.append("活动/秒杀价：").append(String.join("、", withYuan(facts.promoPrices()))).append("。\n");
+        }
+        if (!facts.originalPrices().isEmpty()) {
+            sb.append("原价：").append(String.join("、", withYuan(facts.originalPrices()))).append("。\n");
+        }
+        sb.append("说明：其余描述以图片可识别文本为准；如需更高准确率，请上传更高清原图。");
+        if (StringUtils.hasText(originalAnswer) && !facts.promoPrices().isEmpty()) {
+            sb.append("\n\n补充：已自动忽略与上述价格事实不一致的数字描述。");
+        }
+        return sb.toString();
     }
 
     private String toPlainText(String raw) {
@@ -291,8 +475,93 @@ public class ChatService {
     }
 
     public record UploadSummaryResult(Long sessionId, String summary) {}
-    private record UploadContext(String fileName, String content) {}
+    private record UploadContext(String fileName, String content, PriceFacts facts) {}
+    private record PriceFacts(List<String> promoPrices, List<String> originalPrices, Set<String> allPrices) {}
     public record UploadAskResult(Long sessionId, String answer, String fileName) {}
+
+    private List<ChunkResult> filterSourcesByQuestion(List<ChunkResult> sources, String question) {
+        if (sources == null || sources.isEmpty() || !StringUtils.hasText(question)) {
+            return sources == null ? List.of() : sources;
+        }
+        String q = normalizeForMatch(question);
+        List<String> keywords = extractKeywords(q);
+        if (keywords.isEmpty()) {
+            return sources;
+        }
+        double topScore = sources.stream()
+                .filter(Objects::nonNull)
+                .mapToDouble(ChunkResult::getScore)
+                .max()
+                .orElse(0D);
+        double minScore = topScore > 0D ? topScore * 0.5D : 0D;
+
+        List<ChunkResult> out = new ArrayList<>();
+        for (ChunkResult s : sources) {
+            if (s == null) {
+                continue;
+            }
+            double score = s.getScore();
+            if (score < minScore) {
+                continue;
+            }
+            String content = normalizeForMatch(s.getContent());
+            if (!StringUtils.hasText(content)) {
+                continue;
+            }
+            int hit = 0;
+            for (String k : keywords) {
+                if (content.contains(k)) {
+                    hit++;
+                }
+            }
+            if (hit == 0) {
+                continue;
+            }
+            out.add(s);
+        }
+        return out.isEmpty() ? List.of() : out;
+    }
+
+    private String normalizeForMatch(String text) {
+        if (!StringUtils.hasText(text)) {
+            return "";
+        }
+        return text.replaceAll("\\s+", "").toLowerCase();
+    }
+
+    private List<String> extractKeywords(String text) {
+        List<String> out = new ArrayList<>();
+        if (!StringUtils.hasText(text)) {
+            return out;
+        }
+        // Keep alnum words
+        String[] parts = text.split("[^a-z0-9]+");
+        for (String p : parts) {
+            if (p.length() >= 2) {
+                out.add(p);
+            }
+        }
+        // Add CJK bi-grams to avoid single-character noise
+        for (int i = 0; i < text.length() - 1; i++) {
+            char c1 = text.charAt(i);
+            char c2 = text.charAt(i + 1);
+            if (isCjk(c1) && isCjk(c2)) {
+                out.add("" + c1 + c2);
+            }
+        }
+        // Deduplicate while preserving order
+        return new ArrayList<>(new LinkedHashSet<>(out));
+    }
+
+    private boolean isCjk(char ch) {
+        Character.UnicodeBlock block = Character.UnicodeBlock.of(ch);
+        return block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS
+                || block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A
+                || block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B
+                || block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_C
+                || block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_D
+                || block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS;
+    }
 
     private List<ChunkResult> buildDisplaySources(List<ChunkResult> sources) {
         if (sources == null || sources.isEmpty()) {

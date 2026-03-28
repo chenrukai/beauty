@@ -91,7 +91,7 @@
         />
         <div class="ask-tools">
           <input ref="fileInputRef" class="file-input" type="file" @change="onPickFile" />
-          <el-button plain @click="triggerFilePick">上传文件</el-button>
+          <el-button plain @click="triggerFilePick">上传文件（文档/图片/视频/音频）</el-button>
           <span class="file-text">{{ selectedFileName }}</span>
           <span v-if="documentModeSession && documentModeFileName" class="file-text">文档模式：{{ documentModeFileName }}</span>
           <el-button v-if="attachedFile" text type="danger" @click="clearFile">移除</el-button>
@@ -210,6 +210,14 @@ function clearFile() {
   if (fileInputRef.value) fileInputRef.value.value = ''
 }
 
+function normalizeUploadErrorMessage(message: string) {
+  const raw = (message || '').trim()
+  if (!raw) return ''
+  return raw
+    .replace(/^IMAGE_TEXT_EMPTY:\s*/i, '')
+    .replace(/^TRANSCRIBE_UNAVAILABLE:\s*/i, '')
+}
+
 async function askWithUpload(q: string) {
   if (!attachedFile.value) return
   const displayQuestion = `${q}\n\n[已上传附件：${attachedFile.value.name}（${formatFileSize(attachedFile.value.size)}）]`
@@ -239,11 +247,19 @@ async function askWithUpload(q: string) {
     }
     await chat.fetchSessions()
   } catch (e: any) {
+    const raw = String(e?.message || '').trim()
+    const normalized = normalizeUploadErrorMessage(raw)
     const last = chat.messages[chat.messages.length - 1]
     if (last && last.role === 'assistant') {
-      last.content = 'Sorry, AI service is unavailable. Please try again later.'
+      last.content = normalized || 'Sorry, AI service is unavailable. Please try again later.'
     }
-    ElMessage.error(e?.message || '文档总结失败，请稍后重试')
+    if (raw.toLowerCase().includes('transcribe_unavailable')) {
+      ElMessage.error('视频/音频转写不可用：请检查 Python transcribe 服务与 ffmpeg')
+    } else if (raw.toLowerCase().includes('image_text_empty')) {
+      ElMessage.error('当前仅支持识别图片里的文字，未检测到可识别文字。可上传文字更清晰的图片或文档。')
+    } else {
+      ElMessage.error(raw || '文档总结失败，请稍后重试')
+    }
   } finally {
     summarizing.value = false
   }
@@ -266,11 +282,17 @@ async function askInDocumentMode(q: string) {
     }
     await chat.fetchSessions()
   } catch (e: any) {
+    const raw = String(e?.message || '').trim()
+    const normalized = normalizeUploadErrorMessage(raw)
     const last = chat.messages[chat.messages.length - 1]
     if (last && last.role === 'assistant') {
-      last.content = 'Sorry, AI service is unavailable. Please try again later.'
+      last.content = normalized || 'Sorry, AI service is unavailable. Please try again later.'
     }
-    ElMessage.error(e?.message || '文档追问失败，请先重新上传文件')
+    if (raw.toLowerCase().includes('image_text_empty')) {
+      ElMessage.error('当前仅支持识别图片里的文字，未检测到可识别文字。')
+    } else {
+      ElMessage.error(raw || '文档追问失败，请先重新上传文件')
+    }
   } finally {
     summarizing.value = false
   }

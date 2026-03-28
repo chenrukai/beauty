@@ -1,6 +1,7 @@
 package com.beauty.knowledge.module.cms.controller;
 
 import com.beauty.knowledge.common.result.Result;
+import com.beauty.knowledge.infrastructure.ai.python.PythonAIClient;
 import com.beauty.knowledge.module.cms.domain.vo.FileUploadVO;
 import com.beauty.knowledge.module.cms.domain.vo.ProcessTaskViewVO;
 import com.beauty.knowledge.module.cms.service.FileService;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 
 @Tag(name = "文件管理")
 @RestController
@@ -26,6 +28,7 @@ import java.util.List;
 public class FileController {
 
     private final FileService fileService;
+    private final PythonAIClient pythonAIClient;
 
     @Operation(summary = "上传文件并入队")
     @PreAuthorize("hasRole('admin')")
@@ -63,5 +66,20 @@ public class FileController {
     public Result<Void> remove(@PathVariable Long fileId) {
         fileService.remove(fileId);
         return Result.success();
+    }
+
+    @Operation(summary = "多媒体转写能力检测")
+    @PreAuthorize("hasRole('admin')")
+    @GetMapping("/capability/transcribe")
+    public Result<Map<String, Object>> transcribeCapability() {
+        boolean ok = pythonAIClient.transcribeHealthCheck();
+        String message = ok
+                ? "视频/音频转写服务可用"
+                : "转写服务不可用：请检查 Python transcribe 接口与 ffmpeg";
+        return Result.success(Map.of(
+                "available", ok,
+                "code", ok ? "OK" : "TRANSCRIBE_UNAVAILABLE",
+                "message", message
+        ));
     }
 }

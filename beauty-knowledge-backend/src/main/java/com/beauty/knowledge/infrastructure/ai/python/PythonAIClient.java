@@ -120,6 +120,20 @@ public class PythonAIClient {
         }
     }
 
+    public boolean transcribeHealthCheck() {
+        try {
+            String resp = transcribeClient().get()
+                    .uri("/health")
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .timeout(Duration.ofSeconds(3))
+                    .block();
+            return resp != null && !resp.isBlank();
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
     private String transcribeByJson(byte[] mediaBytes, String mediaType) {
         try {
             Map<String, Object> req = new HashMap<>();

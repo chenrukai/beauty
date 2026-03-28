@@ -358,11 +358,7 @@ public class FileServiceImpl implements FileService {
 
     private String resolveFileType(String requestFileType, String originalName) {
         if (StringUtils.hasText(requestFileType) && !"auto".equalsIgnoreCase(requestFileType)) {
-            String normalized = requestFileType.toLowerCase();
-            if ("audio".equals(normalized) || "video".equals(normalized)) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "audio/video upload is not supported");
-            }
-            return normalized;
+            return requestFileType.toLowerCase();
         }
         return detectFileType(originalName);
     }
@@ -375,6 +371,14 @@ public class FileServiceImpl implements FileService {
         if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")
                 || lower.endsWith(".webp") || lower.endsWith(".bmp") || lower.endsWith(".gif")) {
             return "image";
+        }
+        if (lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".avi")
+                || lower.endsWith(".mkv") || lower.endsWith(".webm") || lower.endsWith(".m4v")) {
+            return "video";
+        }
+        if (lower.endsWith(".mp3") || lower.endsWith(".wav") || lower.endsWith(".m4a")
+                || lower.endsWith(".aac") || lower.endsWith(".flac") || lower.endsWith(".ogg")) {
+            return "audio";
         }
         if (lower.endsWith(".txt") || lower.endsWith(".csv") || lower.endsWith(".json")) {
             return "text_txt";
@@ -408,13 +412,25 @@ public class FileServiceImpl implements FileService {
         if ("TEXT".equals(normalized)) {
             return "TEXT_TXT";
         }
+        if ("VIDEO".equals(normalized)) {
+            return "VIDEO";
+        }
+        if ("AUDIO".equals(normalized)) {
+            return "AUDIO";
+        }
+        if ("MEDIA".equals(normalized) || "MEDIA_AV".equals(normalized)) {
+            return "MEDIA_AV";
+        }
         if ("IMAGE".equals(normalized)
                 || "TEXT_TXT".equals(normalized)
                 || "TEXT_MD".equals(normalized)
                 || "DOC_PDF".equals(normalized)
                 || "DOC_WORD".equals(normalized)
                 || "DOC_PPT".equals(normalized)
-                || "DOC_EXCEL".equals(normalized)) {
+                || "DOC_EXCEL".equals(normalized)
+                || "VIDEO".equals(normalized)
+                || "AUDIO".equals(normalized)
+                || "MEDIA_AV".equals(normalized)) {
             return normalized;
         }
         return "TEXT_TXT";
@@ -427,6 +443,12 @@ public class FileServiceImpl implements FileService {
         String normalized = uploadType.trim().toLowerCase();
         if ("image".equals(normalized)) {
             return "IMAGE";
+        }
+        if ("video".equals(normalized)) {
+            return "VIDEO";
+        }
+        if ("audio".equals(normalized)) {
+            return "AUDIO";
         }
         if ("text_txt".equals(normalized)) {
             return "TEXT_TXT";
@@ -453,6 +475,10 @@ public class FileServiceImpl implements FileService {
         if (knowledgeType.equals(uploadType)) {
             return true;
         }
+        // Media upload (image/video/audio) is allowed for CMS unified multimedia knowledge.
+        if (isMediaUploadType(uploadType)) {
+            return true;
+        }
         // Document knowledge accepts common document/text uploads to avoid hard blocking by legacy type values.
         if (isDocumentKnowledgeType(knowledgeType) && isDocumentUploadType(uploadType)) {
             return true;
@@ -476,6 +502,12 @@ public class FileServiceImpl implements FileService {
                 || "TEXT_MD".equals(type);
     }
 
+    private boolean isMediaUploadType(String type) {
+        return "IMAGE".equals(type)
+                || "VIDEO".equals(type)
+                || "AUDIO".equals(type);
+    }
+
     private void validateFileExtension(String uploadType, String originalName) {
         if (!StringUtils.hasText(originalName)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "original file name is required");
@@ -483,6 +515,8 @@ public class FileServiceImpl implements FileService {
         String name = originalName.toLowerCase();
         boolean ok = switch (uploadType) {
             case "image" -> hasAnySuffix(name, ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif");
+            case "video" -> hasAnySuffix(name, ".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v");
+            case "audio" -> hasAnySuffix(name, ".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg");
             case "text_txt" -> hasAnySuffix(name, ".txt", ".csv", ".json");
             case "text_md" -> hasAnySuffix(name, ".md");
             case "doc_pdf" -> hasAnySuffix(name, ".pdf");

@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   mysql:
     image: mysql:8.0
@@ -149,6 +148,23 @@ services:
       start_period: 40s
     networks:
       - beauty-net
+
+  ocr-ai:
+    build:
+      context: ../python-ai-ocr
+    container_name: beauty-ocr-ai
+    restart: unless-stopped
+    ports:
+      - "${OCR_AI_PORT:-8001}:8001"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8001/health" ]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks:
+      - beauty-net
+
 
 networks:
   beauty-net:

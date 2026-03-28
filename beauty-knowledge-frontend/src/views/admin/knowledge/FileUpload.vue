@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <el-card>
     <template #header>文件上传与入队</template>
 
@@ -15,7 +15,7 @@
               <el-option
                 v-for="item in knowledgeOptions"
                 :key="item.id"
-                :label="item.title || '未命名知识'"
+                :label="item.title || `未命名知识${item.id}`"
                 :value="item.id"
               />
             </el-select>
@@ -39,7 +39,11 @@
           </el-form-item>
 
           <el-form-item label="选择文件">
-            <input type="file" accept="*/*" @change="onFile" />
+            <input
+              type="file"
+              accept=".txt,.md,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg,.webp,.bmp,.gif,.mp4,.mov,.avi,.mkv,.webm,.m4v,.mp3,.wav,.m4a,.aac,.flac,.ogg"
+              @change="onFile"
+            />
           </el-form-item>
 
           <el-form-item>
@@ -56,6 +60,18 @@
           <div class="hint">已选分类：{{ selectedCategoryLabel }}</div>
           <div class="hint">已选文件：{{ selectedFileName }}</div>
           <div class="hint">文件大小：{{ selectedFileSize }}</div>
+          <div class="hint">支持格式：文档、图片、视频、音频</div>
+          <div class="hint" v-if="selectedKind === 'video' || selectedKind === 'audio'">
+            转写能力：
+            <el-tag size="small" :type="transcribeAvailable ? 'success' : 'danger'">
+              {{ transcribeAvailable ? '可用' : '不可用' }}
+            </el-tag>
+          </div>
+          <div class="hint" v-if="selectedKind === 'video' || selectedKind === 'audio'">
+            {{ transcribeMessage }}
+          </div>
+          <div class="hint" v-else-if="selectedKind === 'image'">当前为图片文件：走 OCR 解析，不受转写状态影响</div>
+          <div class="hint" v-else-if="selectedKind === 'document'">当前为文档文件：走文档解析，不受转写状态影响</div>
           <div v-if="lastTaskId" class="hint">最近上传任务ID：<b>{{ lastTaskId }}</b></div>
         </el-card>
       </el-col>
@@ -87,25 +103,28 @@ const categoryId = ref<number | null>(null)
 const file = ref<File | null>(null)
 const loading = ref(false)
 const lastTaskId = ref<number | null>(null)
+const transcribeAvailable = ref(false)
+const transcribeMessage = ref('正在检测多媒体转写能力...')
 
 const knowledgeOptions = computed<KnowledgeOption[]>(() => knowledgeStore.knowledgeList || [])
 
 const categoryOptions = computed(() => {
   const result: Array<{ id: number; label: string }> = []
-  const walk = (nodes: CategoryNode[], depth: number, parentEnabled: boolean) => {
+  const walk = (nodes: CategoryNode[], path: string[], parentEnabled: boolean) => {
     nodes.forEach((node) => {
       const currentEnabled = parentEnabled && Number(node.status ?? 1) === 1
       if (!currentEnabled) {
         return
       }
-      const prefix = depth === 0 ? '' : `${'  '.repeat(depth)}-> `
-      result.push({ id: node.id, label: `${prefix}${node.name || `分类${node.id}`}` })
+      const currentName = node.name || `分类${node.id}`
+      const currentPath = [...path, currentName]
+      result.push({ id: node.id, label: currentPath.join(' / ') })
       if (node.children?.length) {
-        walk(node.children, depth + 1, currentEnabled)
+        walk(node.children, currentPath, currentEnabled)
       }
     })
   }
-  walk(knowledgeStore.categoryTree as CategoryNode[], 0, true)
+  walk(knowledgeStore.categoryTree as CategoryNode[], [], true)
   return result
 })
 
@@ -129,6 +148,15 @@ const selectedFileSize = computed(() => {
   return `${(size / 1024 / 1024).toFixed(2)} MB`
 })
 
+const selectedKind = computed<'none' | 'image' | 'video' | 'audio' | 'document'>(() => {
+  const name = (file.value?.name || '').toLowerCase()
+  if (!name) return 'none'
+  if (/\.(png|jpg|jpeg|webp|bmp|gif)$/.test(name)) return 'image'
+  if (/\.(mp4|mov|avi|mkv|webm|m4v)$/.test(name)) return 'video'
+  if (/\.(mp3|wav|m4a|aac|flac|ogg)$/.test(name)) return 'audio'
+  return 'document'
+})
+
 watch(
   categoryOptions,
   (options) => {
@@ -140,7 +168,7 @@ watch(
 )
 
 onMounted(async () => {
-  await loadAssistData()
+  await Promise.all([loadAssistData(), loadTranscribeCapability()])
 })
 
 async function loadAssistData() {
@@ -154,6 +182,17 @@ async function loadAssistData() {
     }
   } catch {
     ElMessage.error('加载辅助数据失败')
+  }
+}
+
+async function loadTranscribeCapability() {
+  try {
+    const res = await request.get('/file/capability/transcribe')
+    transcribeAvailable.value = Boolean(res.data?.available)
+    transcribeMessage.value = String(res.data?.message || '')
+  } catch {
+    transcribeAvailable.value = false
+    transcribeMessage.value = '转写能力检测失败：请检查后端与 Python transcribe 服务'
   }
 }
 

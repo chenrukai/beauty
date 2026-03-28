@@ -91,7 +91,28 @@ public class KnowledgeProcessConsumer {
 
     private String parseText(String fileType, byte[] bytes) throws Exception {
         if ("image".equalsIgnoreCase(fileType)) {
-            return pythonAIClient.ocr(bytes);
+            if (!pythonAIClient.healthCheck()) {
+                throw new IllegalStateException("OCR_UNAVAILABLE: 图片识别服务不可用，请先启动 ocr-ai 服务");
+            }
+            String text = pythonAIClient.ocr(bytes);
+            if (!StringUtils.hasText(text)) {
+                throw new IllegalStateException("OCR_EMPTY_TEXT: 图片未识别到可用文字，请上传包含清晰文字的图片");
+            }
+            return text;
+        }
+        if ("video".equalsIgnoreCase(fileType)) {
+            String text = pythonAIClient.transcribe(bytes, "video");
+            if (!StringUtils.hasText(text)) {
+                throw new IllegalStateException("TRANSCRIBE_UNAVAILABLE: 视频转写不可用，请检查 Python transcribe 服务与 ffmpeg");
+            }
+            return text;
+        }
+        if ("audio".equalsIgnoreCase(fileType)) {
+            String text = pythonAIClient.transcribe(bytes, "audio");
+            if (!StringUtils.hasText(text)) {
+                throw new IllegalStateException("TRANSCRIBE_UNAVAILABLE: 音频转写不可用，请检查 Python transcribe 服务与 ffmpeg");
+            }
+            return text;
         }
         String parsed = tika.parseToString(new ByteArrayInputStream(bytes));
         if (!StringUtils.hasText(parsed)) {
