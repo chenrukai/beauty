@@ -2,16 +2,19 @@
 import math
 import re
 import zlib
+import tempfile
 
 import cv2
 import numpy as np
-from fastapi import FastAPI
+from fastapi import FastAPI, File, Form, UploadFile
 from pydantic import BaseModel
 from rapidocr_onnxruntime import RapidOCR
+import whisper
 
 
 app = FastAPI(title="Beauty OCR Service")
 ocr_engine = RapidOCR()
+_whisper_model = None
 
 
 class OcrRequest(BaseModel):
@@ -20,6 +23,11 @@ class OcrRequest(BaseModel):
 
 class EmbedRequest(BaseModel):
     texts: list[str]
+
+
+class TranscribeRequest(BaseModel):
+    audioBase64: str
+    mediaType: str | None = None
 
 
 @app.get("/health")
@@ -94,6 +102,46 @@ def _ocr_best_text(image_bytes: bytes) -> str:
             continue
 
     return max(candidates, key=len) if candidates else ""
+
+
+def _get_whisper_model():
+    global _whisper_model
+    if _whisper_model is None:
+        _whisper_model = whisper.load_model("tiny")
+    return _whisper_model
+
+
+def _transcribe_bytes(media_bytes: bytes) -> str:
+    if not media_bytes:
+        return ""
+    model = _get_whisper_model()
+    with tempfile.NamedTemporaryFile(delete=True, suffix=".wav") as f:
+        f.write(media_bytes)
+        f.flush()
+        result = model.transcribe(f.name, fp16=False)
+        return str(result.get("text") or "").strip()
+
+
+@app.post("/transcribe")
+def transcribe(req: TranscribeRequest):
+    try:
+        media_bytes = b64decode(req.audioBase64)
+    except Exception:
+        return {"text": ""}
+    try:
+        return {"text": _transcribe_bytes(media_bytes)}
+    except Exception:
+        return {"text": ""}
+
+
+@app.post("/asr")
+async def asr(audio_file: UploadFile = File(...), task: str = Form("transcribe")):
+    _ = task
+    try:
+        media_bytes = await audio_file.read()
+        return {"text": _transcribe_bytes(media_bytes)}
+    except Exception:
+        return {"text": ""}
 
 
 def _mock_vector(text: str, dim: int = 384) -> list[float]:

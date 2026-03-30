@@ -378,7 +378,7 @@ public class FileServiceImpl implements FileService {
         }
         if (lower.endsWith(".mp3") || lower.endsWith(".wav") || lower.endsWith(".m4a")
                 || lower.endsWith(".aac") || lower.endsWith(".flac") || lower.endsWith(".ogg")) {
-            return "audio";
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "audio upload is disabled");
         }
         if (lower.endsWith(".txt") || lower.endsWith(".csv") || lower.endsWith(".json")) {
             return "text_txt";
@@ -448,7 +448,7 @@ public class FileServiceImpl implements FileService {
             return "VIDEO";
         }
         if ("audio".equals(normalized)) {
-            return "AUDIO";
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "audio upload is disabled");
         }
         if ("text_txt".equals(normalized)) {
             return "TEXT_TXT";
@@ -475,7 +475,7 @@ public class FileServiceImpl implements FileService {
         if (knowledgeType.equals(uploadType)) {
             return true;
         }
-        // Media upload (image/video/audio) is allowed for CMS unified multimedia knowledge.
+        // Media upload (image/video) is allowed for CMS unified multimedia knowledge.
         if (isMediaUploadType(uploadType)) {
             return true;
         }
@@ -504,8 +504,7 @@ public class FileServiceImpl implements FileService {
 
     private boolean isMediaUploadType(String type) {
         return "IMAGE".equals(type)
-                || "VIDEO".equals(type)
-                || "AUDIO".equals(type);
+                || "VIDEO".equals(type);
     }
 
     private void validateFileExtension(String uploadType, String originalName) {
@@ -516,7 +515,7 @@ public class FileServiceImpl implements FileService {
         boolean ok = switch (uploadType) {
             case "image" -> hasAnySuffix(name, ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif");
             case "video" -> hasAnySuffix(name, ".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v");
-            case "audio" -> hasAnySuffix(name, ".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg");
+            case "audio" -> false;
             case "text_txt" -> hasAnySuffix(name, ".txt", ".csv", ".json");
             case "text_md" -> hasAnySuffix(name, ".md");
             case "doc_pdf" -> hasAnySuffix(name, ".pdf");

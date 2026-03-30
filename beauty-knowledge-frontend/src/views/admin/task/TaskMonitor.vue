@@ -206,7 +206,7 @@ function displayResultMsg(row: any) {
   const msg = String(row?.resultMsg || '').trim()
   if (!msg) return '-'
   const lower = msg.toLowerCase()
-  if (lower.includes('transcribe_unavailable')) return '视频/音频转写不可用：请检查 Python transcribe 服务和 ffmpeg'
+  if (lower.includes('transcribe_unavailable')) return '视频转写不可用：请检查 Python transcribe 服务和 ffmpeg'
   if (lower.includes('no text extracted')) return '未提取到文本：文件可能不可解析（可先检查任务状态）'
   if (lower.includes('entity_extract_pending')) return '实体待确认表未初始化：请先执行数据库初始化脚本'
   if (lower.includes('connection refused') && lower.includes('5672')) return '消息队列未连接（RabbitMQ 5672 拒绝连接）'

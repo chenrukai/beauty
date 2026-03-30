@@ -108,11 +108,7 @@ public class KnowledgeProcessConsumer {
             return text;
         }
         if ("audio".equalsIgnoreCase(fileType)) {
-            String text = pythonAIClient.transcribe(bytes, "audio");
-            if (!StringUtils.hasText(text)) {
-                throw new IllegalStateException("TRANSCRIBE_UNAVAILABLE: 音频转写不可用，请检查 Python transcribe 服务与 ffmpeg");
-            }
-            return text;
+            throw new IllegalStateException("AUDIO_DISABLED: 音频上传已禁用");
         }
         String parsed = tika.parseToString(new ByteArrayInputStream(bytes));
         if (!StringUtils.hasText(parsed)) {

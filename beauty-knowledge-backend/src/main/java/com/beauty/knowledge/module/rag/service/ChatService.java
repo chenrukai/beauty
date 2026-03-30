@@ -4,6 +4,7 @@ import com.beauty.knowledge.common.exception.BusinessException;
 import com.beauty.knowledge.common.exception.ErrorCode;
 import com.beauty.knowledge.infrastructure.ai.llm.LLMProvider;
 import com.beauty.knowledge.infrastructure.ai.python.PythonAIClient;
+import com.beauty.knowledge.infrastructure.storage.MinioStorageService;
 import com.beauty.knowledge.module.rag.domain.dto.ChatMessage;
 import com.beauty.knowledge.module.rag.domain.dto.ChatRequest;
 import com.beauty.knowledge.module.rag.domain.dto.ChatStreamChunk;
@@ -50,6 +51,7 @@ public class ChatService {
     private final KbChunkSearchMapper kbChunkSearchMapper;
     private final ObjectProvider<LLMProvider> llmProviderObjectProvider;
     private final PythonAIClient pythonAIClient;
+    private final MinioStorageService minioStorageService;
     private final Tika tika = new Tika();
 
     @Value("${beauty.rag.display-source-top:4}")
@@ -159,6 +161,14 @@ public class ChatService {
         if (!StringUtils.hasText(extractedText)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "文件内容为空或无法解析");
         }
+        String fileName = safeFileName(file.getOriginalFilename());
+        String contentType = StringUtils.hasText(file.getContentType()) ? file.getContentType() : "application/octet-stream";
+        String minioPath = minioStorageService.buildPath("chat-upload", fileName);
+        try {
+            minioStorageService.upload(file.getBytes(), minioPath, contentType);
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "附件保存失败，请重试");
+        }
         PriceFacts facts = extractPriceFacts(extractedText);
         String clipped = extractedText.length() > uploadSummaryMaxChars
                 ? extractedText.substring(0, uploadSummaryMaxChars)
@@ -169,11 +179,13 @@ public class ChatService {
                 : "璇锋€荤粨杩欎釜鏂囦欢鍐呭";
         Long sid = chatSessionService.getOrCreate(userId, sessionId, finalInstruction);
         uploadContextBySession.put(sid, new UploadContext(
-                safeFileName(file.getOriginalFilename()),
+                fileName,
                 extractedText,
-                facts
+                facts,
+                minioPath,
+                contentType
         ));
-        String userQuestion = finalInstruction + "（附件：" + safeFileName(file.getOriginalFilename()) + "）";
+        String userQuestion = finalInstruction + "（附件：" + fileName + "）";
         chatRecordService.saveUserQuestion(sid, userQuestion);
 
         String systemPrompt = """
@@ -189,7 +201,7 @@ public class ChatService {
         String finalAnswer = enforcePriceFactConsistency(rawAnswer, facts);
         chatRecordService.saveAssistantAnswer(sid, finalAnswer, List.of());
         contextService.appendRound(userId, userQuestion, finalAnswer);
-        return new UploadSummaryResult(sid, finalAnswer);
+        return new UploadSummaryResult(sid, finalAnswer, fileName);
     }
 
     public UploadAskResult askByUploadedDocument(Long userId, Long sessionId, String question) {
@@ -234,12 +246,29 @@ public class ChatService {
         return new UploadAskResult(sessionId, finalAnswer, ctx.fileName());
     }
 
+    public UploadAttachment getSessionAttachment(Long userId, Long sessionId) {
+        if (sessionId == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "sessionId is required");
+        }
+        ensureSessionOwned(userId, sessionId);
+        UploadContext ctx = uploadContextBySession.get(sessionId);
+        if (ctx == null || !StringUtils.hasText(ctx.minioPath())) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "No upload attachment found for this session");
+        }
+        byte[] bytes = minioStorageService.download(ctx.minioPath());
+        String contentType = StringUtils.hasText(ctx.contentType()) ? ctx.contentType() : "application/octet-stream";
+        return new UploadAttachment(ctx.fileName(), contentType, bytes);
+    }
+
     private String extractUploadText(MultipartFile file) {
         try {
             byte[] bytes = file.getBytes();
             boolean image = isImage(file);
             boolean video = isVideo(file);
             boolean audio = isAudio(file);
+            if (audio) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "AUDIO_DISABLED: 当前项目不支持音频上传");
+            }
             if (image) {
                 try {
                     String ocr = pythonAIClient.ocr(bytes);
@@ -260,16 +289,6 @@ public class ChatService {
                     // fallback to tika
                 }
             }
-            if (audio) {
-                try {
-                    String text = pythonAIClient.transcribe(bytes, "audio");
-                    if (StringUtils.hasText(text)) {
-                        return text.replace("\u0000", " ").trim();
-                    }
-                } catch (Exception ignore) {
-                    // fallback to tika
-                }
-            }
             String parsed = tika.parseToString(new ByteArrayInputStream(bytes));
             String clean = parsed == null ? "" : parsed.replace("\u0000", " ").trim();
             if (image && !StringUtils.hasText(clean)) {
@@ -278,7 +297,7 @@ public class ChatService {
                         "IMAGE_TEXT_EMPTY: 当前仅支持图片文字识别，未检测到可识别文字。请上传包含清晰文字的图片，或改用文档后再提问。"
                 );
             }
-            if ((video || audio) && !StringUtils.hasText(clean)) {
+            if (video && !StringUtils.hasText(clean)) {
                 throw new BusinessException(
                         ErrorCode.BAD_REQUEST,
                         "TRANSCRIBE_UNAVAILABLE: 褰撳墠鐜鏈惎鐢ㄨ棰?闊抽杞啓鏈嶅姟锛岃妫€鏌?Python transcribe 鎺ュ彛涓?ffmpeg"
@@ -474,10 +493,11 @@ public class ChatService {
                 .trim();
     }
 
-    public record UploadSummaryResult(Long sessionId, String summary) {}
-    private record UploadContext(String fileName, String content, PriceFacts facts) {}
+    public record UploadSummaryResult(Long sessionId, String summary, String fileName) {}
+    private record UploadContext(String fileName, String content, PriceFacts facts, String minioPath, String contentType) {}
     private record PriceFacts(List<String> promoPrices, List<String> originalPrices, Set<String> allPrices) {}
     public record UploadAskResult(Long sessionId, String answer, String fileName) {}
+    public record UploadAttachment(String fileName, String contentType, byte[] bytes) {}
 
     private List<ChunkResult> filterSourcesByQuestion(List<ChunkResult> sources, String question) {
         if (sources == null || sources.isEmpty() || !StringUtils.hasText(question)) {

@@ -12,7 +12,10 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import reactor.core.publisher.Flux;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.List;
 
@@ -58,8 +62,29 @@ public class ChatController {
         ChatService.UploadSummaryResult result = chatService.summarizeUpload(userId, file, instruction, sessionId);
         return Result.success(Map.of(
                 "summary", result.summary(),
-                "sessionId", result.sessionId()
+                "sessionId", result.sessionId(),
+                "fileName", result.fileName()
         ));
+    }
+
+    @Operation(summary = "打开会话最近上传的附件")
+    @GetMapping("/session/{sessionId}/attachment")
+    public ResponseEntity<byte[]> openAttachment(@PathVariable Long sessionId) {
+        Long userId = SecurityUtil.getCurrentUserId();
+        ChatService.UploadAttachment attachment = chatService.getSessionAttachment(userId, sessionId);
+        MediaType mediaType = MediaType.APPLICATION_OCTET_STREAM;
+        try {
+            mediaType = MediaType.parseMediaType(attachment.contentType());
+        } catch (Exception ignore) {
+        }
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(mediaType);
+        headers.setContentDisposition(ContentDisposition.inline()
+                .filename(attachment.fileName(), StandardCharsets.UTF_8)
+                .build());
+        return ResponseEntity.ok()
+                .headers(headers)
+                .body(attachment.bytes());
     }
 
     @Operation(summary = "基于已上传文件继续提问")

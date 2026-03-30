@@ -70,6 +70,9 @@
               <el-button text size="small" @click="copyAnswer(m.content)">复制回答</el-button>
             </div>
             <StreamText :text="m.role === 'assistant' ? sanitizeAssistantText(m.content) : m.content" />
+            <div v-if="m.role === 'user' && hasUploadedAttachment(m.content)" class="msg-tools">
+              <el-button text size="small" @click="openSessionAttachment">打开附件</el-button>
+            </div>
             <div v-if="idx === lastAssistantWithSourcesIndex && m.sources?.length" class="sources">
               <SourceCard v-for="(s, i) in m.sources" :key="i" :source="s" />
             </div>
@@ -90,10 +93,15 @@
           @keydown="onAskInputKeydown"
         />
         <div class="ask-tools">
-          <input ref="fileInputRef" class="file-input" type="file" @change="onPickFile" />
-          <el-button plain @click="triggerFilePick">上传文件（文档/图片/视频/音频）</el-button>
+          <input
+            ref="fileInputRef"
+            class="file-input"
+            type="file"
+            accept=".txt,.md,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg,.webp,.bmp,.gif,.mp4,.mov,.avi,.mkv,.webm,.m4v"
+            @change="onPickFile"
+          />
+          <el-button plain @click="triggerFilePick">上传文件（文档/图片/视频）</el-button>
           <span class="file-text">{{ selectedFileName }}</span>
-          <span v-if="documentModeSession && documentModeFileName" class="file-text">文档模式：{{ documentModeFileName }}</span>
           <el-button v-if="attachedFile" text type="danger" @click="clearFile">移除</el-button>
         </div>
         <el-button type="primary" :loading="chat.isStreaming || summarizing" @click="ask">发送</el-button>
@@ -110,10 +118,14 @@ import MessageBubble from '../../components/chat/MessageBubble.vue'
 import StreamText from '../../components/chat/StreamText.vue'
 import SourceCard from '../../components/chat/SourceCard.vue'
 import { useChatStore } from '../../stores/chat'
+import { useAuthStore } from '../../stores/auth'
 import request from '../../api/request'
 
 const route = useRoute()
 const chat = useChatStore()
+const auth = useAuthStore()
+const configuredBaseURL = import.meta.env.VITE_API_BASE_URL?.trim()
+const apiBaseURL = configuredBaseURL || 'http://127.0.0.1:8080/api'
 const question = ref('')
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const attachedFile = ref<File | null>(null)
@@ -254,7 +266,7 @@ async function askWithUpload(q: string) {
       last.content = normalized || 'Sorry, AI service is unavailable. Please try again later.'
     }
     if (raw.toLowerCase().includes('transcribe_unavailable')) {
-      ElMessage.error('视频/音频转写不可用：请检查 Python transcribe 服务与 ffmpeg')
+      ElMessage.error('视频转写不可用：请检查 Python transcribe 服务与 ffmpeg')
     } else if (raw.toLowerCase().includes('image_text_empty')) {
       ElMessage.error('当前仅支持识别图片里的文字，未检测到可识别文字。可上传文字更清晰的图片或文档。')
     } else {
@@ -302,6 +314,44 @@ function formatFileSize(size: number) {
   if (size < 1024) return `${size} B`
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
   return `${(size / 1024 / 1024).toFixed(2)} MB`
+}
+
+function hasUploadedAttachment(content: string) {
+  if (!content) return false
+  return /\[已上传附件：.+\]/.test(content)
+}
+
+async function openSessionAttachment() {
+  if (!chat.currentSessionId) {
+    ElMessage.warning('请先进入对应会话')
+    return
+  }
+  try {
+    const token = auth.token || localStorage.getItem('bk_token') || ''
+    const resp = await fetch(`${apiBaseURL}/chat/session/${chat.currentSessionId}/attachment`, {
+      method: 'GET',
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+    if (!resp.ok) {
+      const text = await resp.text()
+      throw new Error(text || `附件打开失败（HTTP ${resp.status}）`)
+    }
+    const blob = await resp.blob()
+    const url = URL.createObjectURL(blob)
+    const win = window.open(url, '_blank', 'noopener')
+    if (!win) {
+      const a = document.createElement('a')
+      a.href = url
+      a.target = '_blank'
+      a.rel = 'noopener'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+    }
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000)
+  } catch (e: any) {
+    ElMessage.error(e?.message || '打开附件失败')
+  }
 }
 
 async function copyAnswer(text: string) {

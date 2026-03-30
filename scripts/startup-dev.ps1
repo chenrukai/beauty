@@ -46,6 +46,9 @@ MINIO_SECRET_KEY=beauty_minio_2026
 
 REDIS_PORT=6379
 MILVUS_PORT=19530
+OCR_AI_PORT=8001
+PYTHON_AI_BASE_URL=http://127.0.0.1:8001
+PYTHON_TRANSCRIBE_BASE_URL=http://127.0.0.1:8001
 
 BEAUTY_JWT_SECRET=beauty_jwt_secret_2026_please_change_me
 DISABLE_DEFAULT_SEED_USERS=true
@@ -94,10 +97,21 @@ if (-not (Wait-DockerReady)) {
 
 Write-Step "Starting infrastructure containers"
 Set-Location $backendDir
-docker compose --env-file .env up -d mysql redis rabbitmq minio etcd milvus
+docker compose --env-file .env up -d mysql redis rabbitmq minio etcd milvus ocr-ai
 
 if (-not (Wait-PortReady -port 5672)) {
   Write-Warning "RabbitMQ port 5672 is still unavailable"
+}
+
+if (-not (Wait-PortReady -port 8001)) {
+  Write-Warning "OCR AI port 8001 is still unavailable"
+} else {
+  try {
+    $health = Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8001/health" -TimeoutSec 8
+    Write-Step ("OCR AI health: " + ($health | ConvertTo-Json -Compress))
+  } catch {
+    Write-Warning "OCR AI health check failed, backend may not transcribe media yet"
+  }
 }
 
 Write-Step "Launching backend window"

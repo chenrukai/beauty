@@ -68,14 +68,14 @@ public class FileController {
         return Result.success();
     }
 
-    @Operation(summary = "多媒体转写能力检测")
+    @Operation(summary = "视频转写能力检测")
     @PreAuthorize("hasRole('admin')")
     @GetMapping("/capability/transcribe")
     public Result<Map<String, Object>> transcribeCapability() {
         boolean ok = pythonAIClient.transcribeHealthCheck();
         String message = ok
-                ? "视频/音频转写服务可用"
-                : "转写服务不可用：请检查 Python transcribe 接口与 ffmpeg";
+                ? "视频转写服务可用"
+                : "视频转写服务不可用：请检查 Python transcribe 接口与 ffmpeg";
         return Result.success(Map.of(
                 "available", ok,
                 "code", ok ? "OK" : "TRANSCRIBE_UNAVAILABLE",

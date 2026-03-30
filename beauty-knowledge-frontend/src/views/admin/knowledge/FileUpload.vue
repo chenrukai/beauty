@@ -41,7 +41,7 @@
           <el-form-item label="选择文件">
             <input
               type="file"
-              accept=".txt,.md,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg,.webp,.bmp,.gif,.mp4,.mov,.avi,.mkv,.webm,.m4v,.mp3,.wav,.m4a,.aac,.flac,.ogg"
+              accept=".txt,.md,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg,.webp,.bmp,.gif,.mp4,.mov,.avi,.mkv,.webm,.m4v"
               @change="onFile"
             />
           </el-form-item>
@@ -60,14 +60,14 @@
           <div class="hint">已选分类：{{ selectedCategoryLabel }}</div>
           <div class="hint">已选文件：{{ selectedFileName }}</div>
           <div class="hint">文件大小：{{ selectedFileSize }}</div>
-          <div class="hint">支持格式：文档、图片、视频、音频</div>
-          <div class="hint" v-if="selectedKind === 'video' || selectedKind === 'audio'">
+          <div class="hint">支持格式：文档、图片、视频</div>
+          <div class="hint" v-if="selectedKind === 'video'">
             转写能力：
             <el-tag size="small" :type="transcribeAvailable ? 'success' : 'danger'">
               {{ transcribeAvailable ? '可用' : '不可用' }}
             </el-tag>
           </div>
-          <div class="hint" v-if="selectedKind === 'video' || selectedKind === 'audio'">
+          <div class="hint" v-if="selectedKind === 'video'">
             {{ transcribeMessage }}
           </div>
           <div class="hint" v-else-if="selectedKind === 'image'">当前为图片文件：走 OCR 解析，不受转写状态影响</div>
@@ -148,12 +148,11 @@ const selectedFileSize = computed(() => {
   return `${(size / 1024 / 1024).toFixed(2)} MB`
 })
 
-const selectedKind = computed<'none' | 'image' | 'video' | 'audio' | 'document'>(() => {
+const selectedKind = computed<'none' | 'image' | 'video' | 'document'>(() => {
   const name = (file.value?.name || '').toLowerCase()
   if (!name) return 'none'
   if (/\.(png|jpg|jpeg|webp|bmp|gif)$/.test(name)) return 'image'
   if (/\.(mp4|mov|avi|mkv|webm|m4v)$/.test(name)) return 'video'
-  if (/\.(mp3|wav|m4a|aac|flac|ogg)$/.test(name)) return 'audio'
   return 'document'
 })
 
