@@ -25,6 +25,25 @@ CREATE TABLE IF NOT EXISTS kg_evidence
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci COMMENT ='Knowledge graph evidence';
 
+CREATE TABLE IF NOT EXISTS rel_product_effect
+(
+    id             BIGINT       NOT NULL AUTO_INCREMENT,
+    product_id     BIGINT       NOT NULL,
+    effect_id      BIGINT       NOT NULL,
+    confidence     DECIMAL(5,4) NOT NULL DEFAULT 0.7500,
+    source         VARCHAR(100) NOT NULL DEFAULT 'manual',
+    status         VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',
+    evidence_count INT          NOT NULL DEFAULT 0,
+    created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_product_effect (product_id, effect_id),
+    KEY idx_effect (effect_id),
+    KEY idx_status (status)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci COMMENT ='product-effect relation';
+
 -- entity_extract_pending: candidate_type
 SET @exists := (
     SELECT COUNT(1) FROM information_schema.columns

@@ -24,4 +24,8 @@ public class KgExtractionService {
     public Map<String, Object> extractionConfig() {
         return entityExtractService.kgExtractionConfig();
     }
+
+    public Map<String, Object> demoSeedRelationCandidates(Long fileId, Integer limit) {
+        return entityExtractService.seedDemoRelationCandidates(fileId, limit);
+    }
 }

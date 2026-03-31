@@ -606,3 +606,25 @@ FROM seq_p;
 SELECT COUNT(*)
 FROM information_schema.TABLES
 WHERE TABLE_SCHEMA = 'beauty_knowledge';
+
+-- ============================================================
+-- 15) 产品-功效关系表（知识图谱增强）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS rel_product_effect
+(
+    id             BIGINT       NOT NULL AUTO_INCREMENT COMMENT '关系ID',
+    product_id     BIGINT       NOT NULL COMMENT '产品ID',
+    effect_id      BIGINT       NOT NULL COMMENT '功效ID',
+    confidence     DECIMAL(5,2)          DEFAULT 0.78 COMMENT '置信度',
+    source         VARCHAR(100)          DEFAULT 'manual' COMMENT '来源',
+    status         VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE/INACTIVE',
+    evidence_count INT          NOT NULL DEFAULT 0 COMMENT '证据数量',
+    created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_product_effect (product_id, effect_id),
+    KEY idx_effect (effect_id),
+    KEY idx_status (status)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci COMMENT ='产品功效关系表';

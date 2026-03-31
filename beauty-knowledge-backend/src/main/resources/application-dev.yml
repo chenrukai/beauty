@@ -1,4 +1,4 @@
-spring:
+﻿spring:
   datasource:
     url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:beauty_knowledge}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
     username: ${DB_USER:root}
@@ -78,6 +78,8 @@ beauty:
       ingredient-effect-confidence: 0.82
       product-ingredient-cues: 含有,添加,富含,contains,include
       ingredient-effect-cues: 改善,有助于,抑制,缓解,提升,reduce,improve
+      product-effect-confidence: 0.78
+      product-effect-cues: 主打,针对,适用于,target,suitable
   vector:
     warmup-enabled: true
     warmup-batch-size: 200

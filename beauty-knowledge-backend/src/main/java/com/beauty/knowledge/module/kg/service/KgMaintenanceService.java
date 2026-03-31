@@ -5,11 +5,13 @@ import com.beauty.knowledge.module.entity.domain.entity.BeautyEffect;
 import com.beauty.knowledge.module.entity.domain.entity.BeautyIngredient;
 import com.beauty.knowledge.module.entity.domain.entity.BeautyProduct;
 import com.beauty.knowledge.module.entity.domain.entity.RelIngredientEffect;
+import com.beauty.knowledge.module.entity.domain.entity.RelProductEffect;
 import com.beauty.knowledge.module.entity.domain.entity.RelProductIngredient;
 import com.beauty.knowledge.module.entity.mapper.BeautyEffectMapper;
 import com.beauty.knowledge.module.entity.mapper.BeautyIngredientMapper;
 import com.beauty.knowledge.module.entity.mapper.BeautyProductMapper;
 import com.beauty.knowledge.module.entity.mapper.RelIngredientEffectMapper;
+import com.beauty.knowledge.module.entity.mapper.RelProductEffectMapper;
 import com.beauty.knowledge.module.entity.mapper.RelProductIngredientMapper;
 import com.beauty.knowledge.module.kg.domain.entity.KgEvidence;
 import com.beauty.knowledge.module.kg.domain.vo.KgBackfillResultVO;
@@ -19,6 +21,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -29,6 +34,7 @@ public class KgMaintenanceService {
 
     private final RelProductIngredientMapper relProductIngredientMapper;
     private final RelIngredientEffectMapper relIngredientEffectMapper;
+    private final RelProductEffectMapper relProductEffectMapper;
     private final BeautyProductMapper productMapper;
     private final BeautyIngredientMapper ingredientMapper;
     private final BeautyEffectMapper effectMapper;
@@ -41,6 +47,8 @@ public class KgMaintenanceService {
         int updated = 0;
         int scannedPI = 0;
         int scannedIE = 0;
+        int scannedPE = 0;
+        int insertedProductEffect = 0;
 
         var productIngredient = relProductIngredientMapper.selectList(new LambdaQueryWrapper<RelProductIngredient>()
                 .and(w -> w.eq(RelProductIngredient::getStatus, "ACTIVE").or().isNull(RelProductIngredient::getStatus))
@@ -124,10 +132,102 @@ public class KgMaintenanceService {
             }
         }
 
+        List<RelProductEffect> existingProductEffects = relProductEffectMapper.selectList(new LambdaQueryWrapper<RelProductEffect>()
+                .and(w -> w.eq(RelProductEffect::getStatus, "ACTIVE").or().isNull(RelProductEffect::getStatus))
+                .last("limit " + maxRows));
+        scannedPE = existingProductEffects.size();
+        Set<String> existingKeys = new HashSet<>();
+        for (RelProductEffect rel : existingProductEffects) {
+            existingKeys.add(rel.getProductId() + "#" + rel.getEffectId());
+        }
+
+        Map<Long, Map<Long, BigDecimal>> inferred = new HashMap<>();
+        for (RelProductIngredient pi : productIngredient) {
+            if (pi.getIngredientId() == null || pi.getProductId() == null) {
+                continue;
+            }
+            for (RelIngredientEffect ie : ingredientEffect) {
+                if (ie.getIngredientId() == null || ie.getEffectId() == null) {
+                    continue;
+                }
+                if (!pi.getIngredientId().equals(ie.getIngredientId())) {
+                    continue;
+                }
+                inferred.computeIfAbsent(pi.getProductId(), k -> new HashMap<>());
+                BigDecimal score = inferProductEffectScore(pi.getConfidence(), ie.getConfidence());
+                Map<Long, BigDecimal> effectMap = inferred.get(pi.getProductId());
+                BigDecimal old = effectMap.get(ie.getEffectId());
+                if (old == null || old.compareTo(score) < 0) {
+                    effectMap.put(ie.getEffectId(), score);
+                }
+            }
+        }
+
+        for (Map.Entry<Long, Map<Long, BigDecimal>> entry : inferred.entrySet()) {
+            Long productId = entry.getKey();
+            for (Map.Entry<Long, BigDecimal> e : entry.getValue().entrySet()) {
+                Long effectId = e.getKey();
+                String key = productId + "#" + effectId;
+                if (existingKeys.contains(key)) {
+                    continue;
+                }
+                RelProductEffect rel = new RelProductEffect();
+                rel.setProductId(productId);
+                rel.setEffectId(effectId);
+                rel.setConfidence(e.getValue());
+                rel.setSource("inferred_backfill");
+                rel.setStatus("ACTIVE");
+                rel.setEvidenceCount(0);
+                relProductEffectMapper.insert(rel);
+                insertedProductEffect++;
+                existingProductEffects.add(rel);
+                existingKeys.add(key);
+            }
+        }
+
+        if (!existingProductEffects.isEmpty()) {
+            Set<Long> productIds = existingProductEffects.stream().map(RelProductEffect::getProductId).collect(Collectors.toSet());
+            Set<Long> effectIds = existingProductEffects.stream().map(RelProductEffect::getEffectId).collect(Collectors.toSet());
+            Map<Long, String> productNameById = productMapper.selectBatchIds(productIds).stream()
+                    .collect(Collectors.toMap(BeautyProduct::getId, BeautyProduct::getName));
+            Map<Long, String> effectNameById = effectMapper.selectBatchIds(effectIds).stream()
+                    .collect(Collectors.toMap(BeautyEffect::getId, BeautyEffect::getName));
+
+            for (RelProductEffect rel : existingProductEffects) {
+                int evidenceCount = relationEvidenceCount(
+                        "PRODUCT_TARGETS_EFFECT", "PRODUCT", rel.getProductId(), "EFFECT", rel.getEffectId()
+                );
+                if (evidenceCount == 0) {
+                    KgEvidence evidence = new KgEvidence();
+                    evidence.setRelationType("PRODUCT_TARGETS_EFFECT");
+                    evidence.setSubjectType("PRODUCT");
+                    evidence.setSubjectId(rel.getProductId());
+                    evidence.setObjectType("EFFECT");
+                    evidence.setObjectId(rel.getEffectId());
+                    evidence.setExtractor("backfill");
+                    evidence.setConfidence(rel.getConfidence() == null ? new BigDecimal("0.7800") : rel.getConfidence());
+                    String pName = productNameById.getOrDefault(rel.getProductId(), "product#" + rel.getProductId());
+                    String eName = effectNameById.getOrDefault(rel.getEffectId(), "effect#" + rel.getEffectId());
+                    evidence.setSourceText("Backfill from product-effect relation: " + pName + " targets " + eName);
+                    kgEvidenceMapper.insert(evidence);
+                    evidenceCount = 1;
+                    inserted++;
+                }
+                Integer oldCount = rel.getEvidenceCount();
+                if (oldCount == null || oldCount != evidenceCount) {
+                    rel.setEvidenceCount(evidenceCount);
+                    relProductEffectMapper.updateById(rel);
+                    updated++;
+                }
+            }
+        }
+
         return KgBackfillResultVO.builder()
                 .scannedProductIngredient(scannedPI)
                 .scannedIngredientEffect(scannedIE)
+                .scannedProductEffect(scannedPE + insertedProductEffect)
                 .insertedEvidence(inserted)
+                .insertedProductEffect(insertedProductEffect)
                 .updatedRelations(updated)
                 .build();
     }
@@ -140,5 +240,11 @@ public class KgMaintenanceService {
                 .eq(KgEvidence::getObjectType, objectType)
                 .eq(KgEvidence::getObjectId, objectId));
         return c == null ? 0 : c.intValue();
+    }
+
+    private BigDecimal inferProductEffectScore(BigDecimal productIngredientScore, BigDecimal ingredientEffectScore) {
+        BigDecimal left = productIngredientScore == null ? new BigDecimal("0.8000") : productIngredientScore;
+        BigDecimal right = ingredientEffectScore == null ? new BigDecimal("0.8000") : ingredientEffectScore;
+        return left.min(right);
     }
 }

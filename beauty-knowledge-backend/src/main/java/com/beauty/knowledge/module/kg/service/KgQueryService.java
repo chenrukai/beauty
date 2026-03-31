@@ -7,11 +7,13 @@ import com.beauty.knowledge.module.entity.domain.entity.BeautyEffect;
 import com.beauty.knowledge.module.entity.domain.entity.BeautyIngredient;
 import com.beauty.knowledge.module.entity.domain.entity.BeautyProduct;
 import com.beauty.knowledge.module.entity.domain.entity.RelIngredientEffect;
+import com.beauty.knowledge.module.entity.domain.entity.RelProductEffect;
 import com.beauty.knowledge.module.entity.domain.entity.RelProductIngredient;
 import com.beauty.knowledge.module.entity.mapper.BeautyEffectMapper;
 import com.beauty.knowledge.module.entity.mapper.BeautyIngredientMapper;
 import com.beauty.knowledge.module.entity.mapper.BeautyProductMapper;
 import com.beauty.knowledge.module.entity.mapper.RelIngredientEffectMapper;
+import com.beauty.knowledge.module.entity.mapper.RelProductEffectMapper;
 import com.beauty.knowledge.module.entity.mapper.RelProductIngredientMapper;
 import com.beauty.knowledge.module.kg.domain.entity.KgEvidence;
 import com.beauty.knowledge.module.kg.domain.vo.KgGraphEdgeVO;
@@ -44,6 +46,7 @@ public class KgQueryService {
     private final BeautyEffectMapper effectMapper;
     private final RelProductIngredientMapper relProductIngredientMapper;
     private final RelIngredientEffectMapper relIngredientEffectMapper;
+    private final RelProductEffectMapper relProductEffectMapper;
     private final KgEvidenceMapper kgEvidenceMapper;
 
     public KgGraphVO getProductGraph(Long productId) {
@@ -95,17 +98,42 @@ public class KgQueryService {
                                 .or()
                                 .isNull(RelIngredientEffect::getStatus))
         );
-        if (ingredientEffectRels.isEmpty()) {
+
+        List<RelProductEffect> productEffectRels = relProductEffectMapper.selectList(
+                new LambdaQueryWrapper<RelProductEffect>()
+                        .eq(RelProductEffect::getProductId, productId)
+                        .and(w -> w.eq(RelProductEffect::getStatus, "ACTIVE")
+                                .or()
+                                .isNull(RelProductEffect::getStatus))
+        );
+
+        Set<Long> effectIds = new HashSet<>();
+        effectIds.addAll(ingredientEffectRels.stream().map(RelIngredientEffect::getEffectId).collect(Collectors.toSet()));
+        effectIds.addAll(productEffectRels.stream().map(RelProductEffect::getEffectId).collect(Collectors.toSet()));
+        if (effectIds.isEmpty()) {
             return graph.build();
         }
-
-        Set<Long> effectIds = ingredientEffectRels.stream()
-                .map(RelIngredientEffect::getEffectId)
-                .collect(Collectors.toSet());
         Map<Long, BeautyEffect> effectMap = effectMapper.selectBatchIds(effectIds).stream()
                 .collect(Collectors.toMap(BeautyEffect::getId, v -> v));
 
-        Map<Long, BigDecimal> productEffectConfidence = new LinkedHashMap<>();
+        Set<Long> directEffectIds = productEffectRels.stream().map(RelProductEffect::getEffectId).collect(Collectors.toSet());
+        for (RelProductEffect rel : productEffectRels) {
+            BeautyEffect effect = effectMap.get(rel.getEffectId());
+            if (effect == null) {
+                continue;
+            }
+            graph.addNode("EFFECT", effect.getId(), effect.getName());
+            graph.addEdge(
+                    nodeKey("PRODUCT", productId),
+                    "PRODUCT_TARGETS_EFFECT",
+                    nodeKey("EFFECT", effect.getId()),
+                    defaultConfidence(rel.getConfidence(), new BigDecimal("0.7800")),
+                    defaultEvidenceCount(rel.getEvidenceCount()),
+                    false
+            );
+        }
+
+        Map<Long, BigDecimal> inferredProductEffectConfidence = new LinkedHashMap<>();
         for (RelIngredientEffect rel : ingredientEffectRels) {
             BeautyEffect effect = effectMap.get(rel.getEffectId());
             if (effect == null) {
@@ -121,14 +149,17 @@ public class KgQueryService {
                     false
             );
 
-            BigDecimal oldScore = productEffectConfidence.get(effect.getId());
+            BigDecimal oldScore = inferredProductEffectConfidence.get(effect.getId());
             BigDecimal newScore = defaultConfidence(rel.getConfidence(), new BigDecimal("0.8000"));
             if (oldScore == null || oldScore.compareTo(newScore) < 0) {
-                productEffectConfidence.put(effect.getId(), newScore);
+                inferredProductEffectConfidence.put(effect.getId(), newScore);
             }
         }
 
-        for (Map.Entry<Long, BigDecimal> entry : productEffectConfidence.entrySet()) {
+        for (Map.Entry<Long, BigDecimal> entry : inferredProductEffectConfidence.entrySet()) {
+            if (directEffectIds.contains(entry.getKey())) {
+                continue;
+            }
             graph.addEdge(
                     nodeKey("PRODUCT", productId),
                     "PRODUCT_TARGETS_EFFECT",
@@ -395,6 +426,34 @@ public class KgQueryService {
             );
         }
 
+        List<RelProductEffect> productEffectRels = relProductEffectMapper.selectList(
+                new LambdaQueryWrapper<RelProductEffect>()
+                        .eq(RelProductEffect::getEffectId, effectId)
+                        .and(w -> w.eq(RelProductEffect::getStatus, "ACTIVE")
+                                .or()
+                                .isNull(RelProductEffect::getStatus))
+        );
+        Set<Long> directProductIds = productEffectRels.stream().map(RelProductEffect::getProductId).collect(Collectors.toSet());
+        if (!productEffectRels.isEmpty()) {
+            Map<Long, BeautyProduct> productMap = productMapper.selectBatchIds(directProductIds).stream()
+                    .collect(Collectors.toMap(BeautyProduct::getId, v -> v));
+            for (RelProductEffect rel : productEffectRels) {
+                BeautyProduct product = productMap.get(rel.getProductId());
+                if (product == null) {
+                    continue;
+                }
+                graph.addNode("PRODUCT", product.getId(), product.getName());
+                graph.addEdge(
+                        nodeKey("PRODUCT", product.getId()),
+                        "PRODUCT_TARGETS_EFFECT",
+                        nodeKey("EFFECT", effectId),
+                        defaultConfidence(rel.getConfidence(), new BigDecimal("0.7800")),
+                        defaultEvidenceCount(rel.getEvidenceCount()),
+                        false
+                );
+            }
+        }
+
         List<RelProductIngredient> productRels = relProductIngredientMapper.selectList(
                 new LambdaQueryWrapper<RelProductIngredient>()
                         .in(RelProductIngredient::getIngredientId, ingredientIds)
@@ -420,13 +479,16 @@ public class KgQueryService {
                         defaultEvidenceCount(rel.getEvidenceCount()),
                         false
                 );
+                if (directProductIds.contains(product.getId())) {
+                    continue;
+                }
                 graph.addEdge(
                         nodeKey("PRODUCT", product.getId()),
                         "PRODUCT_TARGETS_EFFECT",
-                        nodeKey("EFFECT", effectId),
-                        defaultConfidence(rel.getConfidence(), new BigDecimal("0.7000")),
-                        0,
-                        true
+                    nodeKey("EFFECT", effectId),
+                    defaultConfidence(rel.getConfidence(), new BigDecimal("0.7000")),
+                    0,
+                    true
                 );
             }
         }
@@ -501,6 +563,23 @@ public class KgQueryService {
                     "INGREDIENT_HAS_EFFECT",
                     nodeKey("EFFECT", rel.getEffectId()),
                     defaultConfidence(rel.getConfidence(), new BigDecimal("0.8000")),
+                    defaultEvidenceCount(rel.getEvidenceCount()),
+                    false
+            );
+        }
+
+        List<RelProductEffect> productEffectRels = relProductEffectMapper.selectList(
+                new LambdaQueryWrapper<RelProductEffect>()
+                        .and(w -> w.eq(RelProductEffect::getStatus, "ACTIVE")
+                                .or()
+                                .isNull(RelProductEffect::getStatus))
+        );
+        for (RelProductEffect rel : productEffectRels) {
+            graph.addEdge(
+                    nodeKey("PRODUCT", rel.getProductId()),
+                    "PRODUCT_TARGETS_EFFECT",
+                    nodeKey("EFFECT", rel.getEffectId()),
+                    defaultConfidence(rel.getConfidence(), new BigDecimal("0.7800")),
                     defaultEvidenceCount(rel.getEvidenceCount()),
                     false
             );

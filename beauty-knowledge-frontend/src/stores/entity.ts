@@ -74,6 +74,13 @@ export const useEntityStore = defineStore('entity', () => {
     return kgExtractionConfig.value
   }
 
+  async function demoSeedKgRelations(fileId: number, limit?: number) {
+    const params: any = {}
+    if (limit && limit > 0) params.limit = limit
+    const res = await request.post(`/kg/extract/file/${fileId}/demo-seed`, null, { params })
+    return res.data || null
+  }
+
   async function fetchProductGraph(productId: number) {
     const res = await request.get(`/kg/product/${productId}/graph`)
     return res.data || { nodes: [], edges: [] }
@@ -120,6 +127,7 @@ export const useEntityStore = defineStore('entity', () => {
     confirmKgPending,
     rejectKgPending,
     fetchKgExtractionConfig,
+    demoSeedKgRelations,
     fetchProductGraph,
     findKgPath,
     fetchRelationEvidence,

@@ -46,6 +46,14 @@ public class KgController {
         return Result.success(kgExtractionService.extractByFileId(fileId));
     }
 
+    @Operation(summary = "Seed relation candidates for demo")
+    @PreAuthorize("hasRole('admin')")
+    @PostMapping("/extract/file/{fileId}/demo-seed")
+    public Result<Map<String, Object>> demoSeedByFile(@PathVariable Long fileId,
+                                                       @RequestParam(required = false) Integer limit) {
+        return Result.success(kgExtractionService.demoSeedRelationCandidates(fileId, limit));
+    }
+
     @Operation(summary = "Get extraction strategy config")
     @PreAuthorize("hasRole('admin')")
     @GetMapping("/config/extraction")

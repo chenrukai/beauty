@@ -1,4 +1,4 @@
-package com.beauty.knowledge.module.entity.service;
+﻿package com.beauty.knowledge.module.entity.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.beauty.knowledge.common.exception.BusinessException;
@@ -10,6 +10,10 @@ import com.beauty.knowledge.module.cms.mapper.KbFileMapper;
 import com.beauty.knowledge.infrastructure.dictionary.BeautyDictionary;
 import com.beauty.knowledge.module.entity.domain.entity.EntityExtractPending;
 import com.beauty.knowledge.module.entity.domain.entity.BeautyProduct;
+import com.beauty.knowledge.module.entity.domain.entity.BeautyIngredient;
+import com.beauty.knowledge.module.entity.domain.entity.BeautyEffect;
+import com.beauty.knowledge.module.entity.mapper.BeautyIngredientMapper;
+import com.beauty.knowledge.module.entity.mapper.BeautyEffectMapper;
 import com.beauty.knowledge.module.entity.mapper.BeautyProductMapper;
 import com.beauty.knowledge.module.entity.mapper.EntityExtractPendingMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -40,6 +44,8 @@ public class EntityExtractService {
     private final KbChunkMapper kbChunkMapper;
     private final KbFileMapper kbFileMapper;
     private final BeautyProductMapper beautyProductMapper;
+    private final BeautyIngredientMapper beautyIngredientMapper;
+    private final BeautyEffectMapper beautyEffectMapper;
     private final ObjectMapper objectMapper;
     private final JdbcTemplate jdbcTemplate;
 
@@ -52,11 +58,17 @@ public class EntityExtractService {
     @Value("${beauty.kg.extraction.ingredient-effect-confidence:0.82}")
     private BigDecimal ingredientEffectConfidence;
 
+    @Value("${beauty.kg.extraction.product-effect-confidence:0.78}")
+    private BigDecimal productEffectConfidence;
+
     @Value("${beauty.kg.extraction.product-ingredient-cues:含有,添加,富含,contains,include}")
     private String productIngredientCues;
 
     @Value("${beauty.kg.extraction.ingredient-effect-cues:改善,有助于,抑制,缓解,提升,reduce,improve}")
     private String ingredientEffectCues;
+
+    @Value("${beauty.kg.extraction.product-effect-cues:主打,针对,适用于,target,suitable}")
+    private String productEffectCues;
 
     public record ExtractStat(int matchedCount, int insertedCount) {
     }
@@ -66,8 +78,10 @@ public class EntityExtractService {
                 "minSegmentLength", Math.max(1, kgMinSegmentLength),
                 "productIngredientConfidence", productIngredientConfidence,
                 "ingredientEffectConfidence", ingredientEffectConfidence,
+                "productEffectConfidence", productEffectConfidence,
                 "productIngredientCues", List.copyOf(parseCues(productIngredientCues)),
-                "ingredientEffectCues", List.copyOf(parseCues(ingredientEffectCues))
+                "ingredientEffectCues", List.copyOf(parseCues(ingredientEffectCues)),
+                "productEffectCues", List.copyOf(parseCues(productEffectCues))
         );
     }
 
@@ -171,6 +185,57 @@ public class EntityExtractService {
         }
     }
 
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> seedDemoRelationCandidates(Long fileId, Integer limit) {
+        ensurePendingTableReady();
+        if (fileId == null || fileId <= 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "fileId is required");
+        }
+        int max = Math.max(1, Math.min(limit == null ? 20 : limit, 100));
+        int inserted = 0;
+        String source = "demo-seed for fileId=" + fileId;
+
+        List<BeautyProduct> products = beautyProductMapper.selectList(new LambdaQueryWrapper<BeautyProduct>()
+                .eq(BeautyProduct::getStatus, 1)
+                .orderByDesc(BeautyProduct::getId)
+                .last("limit " + max));
+        List<BeautyIngredient> ingredients = beautyIngredientMapper.selectList(new LambdaQueryWrapper<BeautyIngredient>()
+                .eq(BeautyIngredient::getStatus, 1)
+                .orderByDesc(BeautyIngredient::getId)
+                .last("limit " + max));
+        List<BeautyEffect> effects = beautyEffectMapper.selectList(new LambdaQueryWrapper<BeautyEffect>()
+                .eq(BeautyEffect::getStatus, 1)
+                .orderByDesc(BeautyEffect::getId)
+                .last("limit " + max));
+
+        int triples = Math.min(Math.min(products.size(), ingredients.size()), effects.size());
+        for (int i = 0; i < triples; i++) {
+            BeautyProduct product = products.get(i);
+            BeautyIngredient ingredient = ingredients.get(i);
+            BeautyEffect effect = effects.get(i);
+
+            if (insertRelationPendingIfAbsent(fileId, "PRODUCT_CONTAINS_INGREDIENT",
+                    product.getName(), ingredient.getName(), source, "demo_seed", new BigDecimal("0.7600"), null)) {
+                inserted++;
+            }
+            if (insertRelationPendingIfAbsent(fileId, "INGREDIENT_HAS_EFFECT",
+                    ingredient.getName(), effect.getName(), source, "demo_seed", new BigDecimal("0.7600"), null)) {
+                inserted++;
+            }
+            if (insertRelationPendingIfAbsent(fileId, "PRODUCT_TARGETS_EFFECT",
+                    product.getName(), effect.getName(), source, "demo_seed", new BigDecimal("0.7600"), null)) {
+                inserted++;
+            }
+        }
+
+        return Map.of(
+                "fileId", fileId,
+                "seedLimit", max,
+                "triples", triples,
+                "inserted", inserted
+        );
+    }
+
     private void ensurePendingTableReady() {
         jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS entity_extract_pending (
@@ -231,6 +296,7 @@ public class EntityExtractService {
         addIfContains(text, out, "控油");
         return out;
     }
+
 
     private void addIfContains(String text, Set<String> out, String keyword) {
         if (text.contains(keyword)) {
@@ -375,6 +441,25 @@ public class EntityExtractService {
                     }
                 }
             }
+
+            if (containsProductEffectCue(segment)) {
+                for (String product : products) {
+                    for (String effect : effects) {
+                        if (insertRelationPendingIfAbsent(
+                                fileId,
+                                "PRODUCT_TARGETS_EFFECT",
+                                product,
+                                effect,
+                                segment,
+                                "rule",
+                                productEffectConfidence,
+                                null
+                        )) {
+                            inserted++;
+                        }
+                    }
+                }
+            }
         }
         return inserted;
     }
@@ -445,6 +530,19 @@ public class EntityExtractService {
             }
         }
         return false;
+    }
+
+    private boolean containsProductEffectCue(String segment) {
+        String lower = segment.toLowerCase(Locale.ROOT);
+        for (String cue : parseCues(productEffectCues)) {
+            if (lower.contains(cue)) {
+                return true;
+            }
+        }
+        // Unicode-escaped fallback to avoid locale/encoding issues in config.
+        return lower.contains("\u4E3B\u6253") // 主打
+                || lower.contains("\u9488\u5BF9") // 针对
+                || lower.contains("\u9002\u7528\u4E8E"); // 适用于
     }
 
     private boolean insertRelationPendingIfAbsent(Long fileId,
@@ -522,6 +620,15 @@ public class EntityExtractService {
             case "INGREDIENT_HAS_EFFECT" -> {
                 if (subject) {
                     return resolveIngredientIdByName(safeName);
+                }
+                return resolveEffectIdByName(safeName);
+            }
+            case "PRODUCT_TARGETS_EFFECT" -> {
+                if (subject) {
+                    BeautyProduct p = beautyProductMapper.selectOne(new LambdaQueryWrapper<BeautyProduct>()
+                            .eq(BeautyProduct::getName, safeName)
+                            .last("limit 1"));
+                    return p == null ? null : p.getId();
                 }
                 return resolveEffectIdByName(safeName);
             }

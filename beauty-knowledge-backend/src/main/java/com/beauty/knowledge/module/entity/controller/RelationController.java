@@ -3,6 +3,7 @@ package com.beauty.knowledge.module.entity.controller;
 import com.beauty.knowledge.common.result.Result;
 import com.beauty.knowledge.module.entity.domain.dto.RelationBindDTO;
 import com.beauty.knowledge.module.entity.domain.entity.RelIngredientEffect;
+import com.beauty.knowledge.module.entity.domain.entity.RelProductEffect;
 import com.beauty.knowledge.module.entity.domain.entity.RelProductIngredient;
 import com.beauty.knowledge.module.entity.service.RelationService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -70,5 +71,27 @@ public class RelationController {
     @GetMapping("/product-ingredient")
     public Result<List<RelProductIngredient>> productIngredientList(@RequestParam(required = false) Long productId) {
         return Result.success(relationService.listProductIngredients(productId));
+    }
+
+    @Operation(summary = "绑定产品-功效")
+    @PreAuthorize("hasRole('admin')")
+    @PostMapping("/product-effect")
+    public Result<Void> bindProductEffect(@Valid @RequestBody RelationBindDTO dto) {
+        relationService.bindProductEffect(dto.getLeftId(), dto.getRightId());
+        return Result.success();
+    }
+
+    @Operation(summary = "解绑产品-功效")
+    @PreAuthorize("hasRole('admin')")
+    @DeleteMapping("/product-effect")
+    public Result<Void> unbindProductEffect(@RequestParam Long productId, @RequestParam Long effectId) {
+        relationService.unbindProductEffect(productId, effectId);
+        return Result.success();
+    }
+
+    @Operation(summary = "产品-功效关系列表")
+    @GetMapping("/product-effect")
+    public Result<List<RelProductEffect>> productEffectList(@RequestParam(required = false) Long productId) {
+        return Result.success(relationService.listProductEffects(productId));
     }
 }

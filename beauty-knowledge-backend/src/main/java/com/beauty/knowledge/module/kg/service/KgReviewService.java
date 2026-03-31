@@ -8,12 +8,14 @@ import com.beauty.knowledge.module.entity.domain.entity.BeautyIngredient;
 import com.beauty.knowledge.module.entity.domain.entity.BeautyProduct;
 import com.beauty.knowledge.module.entity.domain.entity.EntityExtractPending;
 import com.beauty.knowledge.module.entity.domain.entity.RelIngredientEffect;
+import com.beauty.knowledge.module.entity.domain.entity.RelProductEffect;
 import com.beauty.knowledge.module.entity.domain.entity.RelProductIngredient;
 import com.beauty.knowledge.module.entity.mapper.BeautyEffectMapper;
 import com.beauty.knowledge.module.entity.mapper.BeautyIngredientMapper;
 import com.beauty.knowledge.module.entity.mapper.BeautyProductMapper;
 import com.beauty.knowledge.module.entity.mapper.EntityExtractPendingMapper;
 import com.beauty.knowledge.module.entity.mapper.RelIngredientEffectMapper;
+import com.beauty.knowledge.module.entity.mapper.RelProductEffectMapper;
 import com.beauty.knowledge.module.entity.mapper.RelProductIngredientMapper;
 import com.beauty.knowledge.module.kg.domain.entity.KgEvidence;
 import com.beauty.knowledge.module.kg.domain.vo.KgPendingViewVO;
@@ -41,6 +43,7 @@ public class KgReviewService {
     private final BeautyProductMapper productMapper;
     private final RelProductIngredientMapper relProductIngredientMapper;
     private final RelIngredientEffectMapper relIngredientEffectMapper;
+    private final RelProductEffectMapper relProductEffectMapper;
     private final KgEvidenceMapper kgEvidenceMapper;
     private final ObjectMapper objectMapper;
 
@@ -120,6 +123,7 @@ public class KgReviewService {
         switch (predicate) {
             case "PRODUCT_CONTAINS_INGREDIENT" -> upsertResult = upsertProductContainsIngredient(payload);
             case "INGREDIENT_HAS_EFFECT" -> upsertResult = upsertIngredientHasEffect(payload);
+            case "PRODUCT_TARGETS_EFFECT" -> upsertResult = upsertProductTargetsEffect(payload);
             default -> throw new BusinessException(ErrorCode.BAD_REQUEST, "unsupported relation predicate: " + predicate);
         }
 
@@ -189,6 +193,34 @@ public class KgReviewService {
         rel.setEvidenceCount((rel.getEvidenceCount() == null ? 0 : rel.getEvidenceCount()) + 1);
         relIngredientEffectMapper.updateById(rel);
         return new RelationUpsertResult("INGREDIENT", rel.getIngredientId(), "EFFECT", rel.getEffectId());
+    }
+
+    private RelationUpsertResult upsertProductTargetsEffect(RelationPayload payload) {
+        Long subjectId = payload.getSubjectId() == null ? findProductIdByName(payload.getSubjectName()) : payload.getSubjectId();
+        Long objectId = payload.getObjectId() == null ? findEffectIdByName(payload.getObjectName()) : payload.getObjectId();
+        if (subjectId == null || objectId == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "relation payload missing subjectId/objectId");
+        }
+        RelProductEffect rel = relProductEffectMapper.selectOne(new LambdaQueryWrapper<RelProductEffect>()
+                .eq(RelProductEffect::getProductId, subjectId)
+                .eq(RelProductEffect::getEffectId, objectId)
+                .last("limit 1"));
+        if (rel == null) {
+            rel = new RelProductEffect();
+            rel.setProductId(subjectId);
+            rel.setEffectId(objectId);
+            rel.setConfidence(firstNonNull(payload.getConfidence(), new BigDecimal("0.7800")));
+            rel.setSource("review");
+            rel.setStatus("ACTIVE");
+            rel.setEvidenceCount(0);
+            relProductEffectMapper.insert(rel);
+        } else {
+            rel.setStatus("ACTIVE");
+            relProductEffectMapper.updateById(rel);
+        }
+        rel.setEvidenceCount((rel.getEvidenceCount() == null ? 0 : rel.getEvidenceCount()) + 1);
+        relProductEffectMapper.updateById(rel);
+        return new RelationUpsertResult("PRODUCT", rel.getProductId(), "EFFECT", rel.getEffectId());
     }
 
     private void insertEvidence(String relationType,

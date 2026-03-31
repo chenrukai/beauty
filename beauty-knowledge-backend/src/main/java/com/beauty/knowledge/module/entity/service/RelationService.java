@@ -4,8 +4,10 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.beauty.knowledge.common.exception.BusinessException;
 import com.beauty.knowledge.common.exception.ErrorCode;
 import com.beauty.knowledge.module.entity.domain.entity.RelIngredientEffect;
+import com.beauty.knowledge.module.entity.domain.entity.RelProductEffect;
 import com.beauty.knowledge.module.entity.domain.entity.RelProductIngredient;
 import com.beauty.knowledge.module.entity.mapper.RelIngredientEffectMapper;
+import com.beauty.knowledge.module.entity.mapper.RelProductEffectMapper;
 import com.beauty.knowledge.module.entity.mapper.RelProductIngredientMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -23,6 +25,7 @@ public class RelationService {
     private final ProductService productService;
     private final RelIngredientEffectMapper relIngredientEffectMapper;
     private final RelProductIngredientMapper relProductIngredientMapper;
+    private final RelProductEffectMapper relProductEffectMapper;
 
     @Transactional(rollbackFor = Exception.class)
     public void bindIngredientEffect(Long ingredientId, Long effectId) {
@@ -87,5 +90,40 @@ public class RelationService {
         return relProductIngredientMapper.selectList(new LambdaQueryWrapper<RelProductIngredient>()
                 .eq(productId != null, RelProductIngredient::getProductId, productId)
                 .orderByDesc(RelProductIngredient::getId));
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void bindProductEffect(Long productId, Long effectId) {
+        if (productService.getById(productId) == null || effectService.getById(effectId) == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "实体不存在");
+        }
+        RelProductEffect exist = relProductEffectMapper.selectOne(new LambdaQueryWrapper<RelProductEffect>()
+                .eq(RelProductEffect::getProductId, productId)
+                .eq(RelProductEffect::getEffectId, effectId)
+                .last("limit 1"));
+        if (exist != null) {
+            return;
+        }
+        RelProductEffect rel = new RelProductEffect();
+        rel.setProductId(productId);
+        rel.setEffectId(effectId);
+        rel.setConfidence(new BigDecimal("0.78"));
+        rel.setSource("manual");
+        rel.setStatus("ACTIVE");
+        rel.setEvidenceCount(0);
+        relProductEffectMapper.insert(rel);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void unbindProductEffect(Long productId, Long effectId) {
+        relProductEffectMapper.delete(new LambdaQueryWrapper<RelProductEffect>()
+                .eq(RelProductEffect::getProductId, productId)
+                .eq(RelProductEffect::getEffectId, effectId));
+    }
+
+    public List<RelProductEffect> listProductEffects(Long productId) {
+        return relProductEffectMapper.selectList(new LambdaQueryWrapper<RelProductEffect>()
+                .eq(productId != null, RelProductEffect::getProductId, productId)
+                .orderByDesc(RelProductEffect::getId));
     }
 }
