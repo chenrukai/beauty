@@ -5,6 +5,7 @@ import request from '../api/request'
 export const useEntityStore = defineStore('entity', () => {
   const pendingList = ref<any[]>([])
   const ingredientList = ref<any[]>([])
+  const effectList = ref<any[]>([])
   const productList = ref<any[]>([])
   const pendingCount = ref(0)
   const kgExtractionConfig = ref<any>(null)
@@ -31,6 +32,11 @@ export const useEntityStore = defineStore('entity', () => {
   async function fetchProduct() {
     const res = await request.get('/entity/product')
     productList.value = res.data || []
+  }
+
+  async function fetchEffect() {
+    const res = await request.get('/entity/effect')
+    effectList.value = res.data || []
   }
 
   async function confirm(items: Array<{ pendingId: number; accept: boolean }>, status?: string) {
@@ -90,15 +96,24 @@ export const useEntityStore = defineStore('entity', () => {
     return res.data || []
   }
 
+  async function backfillKgEvidence(limit?: number) {
+    const params: any = {}
+    if (limit) params.limit = limit
+    const res = await request.post('/kg/evidence/backfill', null, { params })
+    return res.data || null
+  }
+
   return {
     pendingList,
     ingredientList,
+    effectList,
     productList,
     pendingCount,
     kgExtractionConfig,
     fetchPending,
     fetchPendingCount,
     fetchIngredient,
+    fetchEffect,
     fetchProduct,
     confirm,
     fetchKgPending,
@@ -107,6 +122,7 @@ export const useEntityStore = defineStore('entity', () => {
     fetchKgExtractionConfig,
     fetchProductGraph,
     findKgPath,
-    fetchRelationEvidence
+    fetchRelationEvidence,
+    backfillKgEvidence
   }
 })

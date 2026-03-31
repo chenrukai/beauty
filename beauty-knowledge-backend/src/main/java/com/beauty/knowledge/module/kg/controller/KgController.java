@@ -6,9 +6,11 @@ import com.beauty.knowledge.module.entity.domain.entity.EntityExtractPending;
 import com.beauty.knowledge.module.kg.domain.dto.KgReviewRequest;
 import com.beauty.knowledge.module.kg.domain.vo.KgEvidenceVO;
 import com.beauty.knowledge.module.kg.domain.vo.KgGraphVO;
+import com.beauty.knowledge.module.kg.domain.vo.KgBackfillResultVO;
 import com.beauty.knowledge.module.kg.domain.vo.KgPendingViewVO;
 import com.beauty.knowledge.module.kg.domain.vo.KgPathVO;
 import com.beauty.knowledge.module.kg.service.KgExtractionService;
+import com.beauty.knowledge.module.kg.service.KgMaintenanceService;
 import com.beauty.knowledge.module.kg.service.KgQueryService;
 import com.beauty.knowledge.module.kg.service.KgReviewService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -35,6 +37,7 @@ public class KgController {
     private final KgExtractionService kgExtractionService;
     private final KgReviewService kgReviewService;
     private final KgQueryService kgQueryService;
+    private final KgMaintenanceService kgMaintenanceService;
 
     @Operation(summary = "Trigger extraction from file")
     @PreAuthorize("hasRole('admin')")
@@ -113,5 +116,12 @@ public class KgController {
                                                @RequestParam(required = false) Long objectId,
                                                @RequestParam(required = false) Integer size) {
         return Result.success(kgQueryService.relationEvidence(predicate, subjectType, subjectId, objectType, objectId, size));
+    }
+
+    @Operation(summary = "Backfill missing evidence for existing relations")
+    @PreAuthorize("hasRole('admin')")
+    @PostMapping("/evidence/backfill")
+    public Result<KgBackfillResultVO> backfillEvidence(@RequestParam(required = false) Integer limit) {
+        return Result.success(kgMaintenanceService.backfillEvidence(limit));
     }
 }
