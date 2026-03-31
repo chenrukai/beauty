@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <el-card>
     <template #header>任务监控</template>
 

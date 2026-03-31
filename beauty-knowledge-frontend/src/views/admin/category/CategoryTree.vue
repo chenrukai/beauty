@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <el-card>
     <template #header>分类树管理</template>
 

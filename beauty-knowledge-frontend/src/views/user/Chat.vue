@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="chat-page">
     <aside class="left">
       <el-card shadow="never" class="panel">

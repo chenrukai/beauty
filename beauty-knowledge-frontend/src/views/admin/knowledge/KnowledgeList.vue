@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <el-card>
     <template #header>知识列表</template>
 

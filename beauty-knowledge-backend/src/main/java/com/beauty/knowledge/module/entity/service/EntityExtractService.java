@@ -1,4 +1,4 @@
-﻿package com.beauty.knowledge.module.entity.service;
+package com.beauty.knowledge.module.entity.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.beauty.knowledge.common.exception.BusinessException;

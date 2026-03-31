@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <el-card>
     <template #header>文件上传与入队</template>
 
