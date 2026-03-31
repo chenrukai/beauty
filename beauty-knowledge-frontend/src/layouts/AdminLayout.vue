@@ -1,27 +1,28 @@
-<template>
+﻿<template>
   <div class="admin-shell">
     <aside class="side">
-      <h2 class="title">管理后台</h2>
+      <h2 class="title">绠＄悊鍚庡彴</h2>
 
       <div class="menu-group">
-        <p class="group-title">运营看板</p>
-        <router-link to="/admin/overview">运营总览</router-link>
-        <router-link to="/admin/report">运营报表</router-link>
+        <p class="group-title">杩愯惀鐪嬫澘</p>
+        <router-link to="/admin/overview">杩愯惀鎬昏</router-link>
+        <router-link to="/admin/report">杩愯惀鎶ヨ〃</router-link>
       </div>
 
       <div class="menu-group">
-        <p class="group-title">内容管理</p>
-        <router-link to="/admin/knowledge/list">知识列表</router-link>
-        <router-link to="/admin/knowledge/upload">文件上传</router-link>
+        <p class="group-title">鍐呭绠＄悊</p>
+        <router-link to="/admin/knowledge/list">鐭ヨ瘑鍒楄〃</router-link>
+        <router-link to="/admin/knowledge/upload">鏂囦欢涓婁紶</router-link>
         <router-link to="/admin/category/tree">分类树</router-link>
-        <router-link to="/admin/entity/confirm">实体确认</router-link>
+        <router-link to="/admin/entity/confirm">瀹炰綋纭</router-link>
+        <router-link to="/admin/entity/graph">知识图谱</router-link>
       </div>
 
       <div class="menu-group">
-        <p class="group-title">系统管理</p>
-        <router-link to="/admin/task/monitor">任务监控</router-link>
-        <router-link to="/admin/user/manage">用户管理</router-link>
-        <router-link to="/admin/system/notice">公告管理</router-link>
+        <p class="group-title">绯荤粺绠＄悊</p>
+        <router-link to="/admin/task/monitor">浠诲姟鐩戞帶</router-link>
+        <router-link to="/admin/user/manage">鐢ㄦ埛绠＄悊</router-link>
+        <router-link to="/admin/system/notice">鍏憡绠＄悊</router-link>
       </div>
     </aside>
 

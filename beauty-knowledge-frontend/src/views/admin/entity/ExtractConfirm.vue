@@ -1,57 +1,80 @@
 <template>
   <el-card>
-    <template #header>实体待确认</template>
+    <template #header>实体与关系候选确认</template>
 
     <el-row :gutter="12" style="margin-bottom: 12px">
       <el-col :xs="24" :sm="6">
         <el-statistic title="待确认总数" :value="store.pendingCount" />
       </el-col>
       <el-col :xs="24" :sm="6">
-        <el-statistic title="成分候选" :value="typeCount.ingredient" />
+        <el-statistic title="实体候选" :value="candidateCount.entity" />
       </el-col>
       <el-col :xs="24" :sm="6">
-        <el-statistic title="功效候选" :value="typeCount.effect" />
+        <el-statistic title="关系候选" :value="candidateCount.relation" />
       </el-col>
       <el-col :xs="24" :sm="6">
-        <el-statistic title="产品候选" :value="typeCount.product" />
+        <el-statistic title="当前筛选结果" :value="filtered.length" />
       </el-col>
     </el-row>
 
+    <el-alert
+      v-if="store.kgExtractionConfig"
+      type="info"
+      :closable="false"
+      style="margin-bottom: 12px"
+    >
+      <template #title>
+        规则可调：关系触发词与置信度来自后端配置（minSegmentLength={{ store.kgExtractionConfig.minSegmentLength }}，
+        产品-成分={{ store.kgExtractionConfig.productIngredientConfidence }}，
+        成分-功效={{ store.kgExtractionConfig.ingredientEffectConfidence }}）
+      </template>
+    </el-alert>
+
     <el-form inline>
       <el-form-item>
-        <el-select v-model="typeFilter" clearable placeholder="按实体类型筛选" style="width: 180px">
-          <el-option label="成分" value="ingredient" />
-          <el-option label="功效" value="effect" />
-          <el-option label="产品" value="product" />
-        </el-select>
-      </el-form-item>
-      <el-form-item>
-        <el-select v-model="statusFilter" placeholder="按状态筛选" style="width: 180px">
-          <el-option label="全部" value="ALL" />
+        <el-select v-model="statusFilter" style="width: 150px">
+          <el-option label="全部状态" value="ALL" />
           <el-option label="待确认" value="PENDING" />
           <el-option label="已确认" value="CONFIRMED" />
           <el-option label="已拒绝" value="REJECTED" />
         </el-select>
       </el-form-item>
       <el-form-item>
-        <el-input v-model="keyword" clearable placeholder="按名称搜索" style="width: 220px" />
+        <el-select v-model="candidateFilter" style="width: 150px">
+          <el-option label="全部候选" value="ALL" />
+          <el-option label="实体候选" value="entity" />
+          <el-option label="关系候选" value="relation" />
+        </el-select>
       </el-form-item>
       <el-form-item>
-        <el-input v-model="fileKeyword" clearable placeholder="按文件名搜索" style="width: 220px" />
+        <el-select v-model="entityTypeFilter" clearable placeholder="实体类型" style="width: 140px">
+          <el-option label="成分" value="ingredient" />
+          <el-option label="功效" value="effect" />
+          <el-option label="产品" value="product" />
+        </el-select>
       </el-form-item>
       <el-form-item>
-        <el-switch v-model="pendingOnly" active-text="只看待确认" />
+        <el-select v-model="predicateFilter" clearable placeholder="关系谓词" style="width: 220px">
+          <el-option label="产品包含成分" value="PRODUCT_CONTAINS_INGREDIENT" />
+          <el-option label="成分作用功效" value="INGREDIENT_HAS_EFFECT" />
+        </el-select>
+      </el-form-item>
+      <el-form-item>
+        <el-input v-model="keyword" clearable placeholder="名称关键词" style="width: 180px" />
+      </el-form-item>
+      <el-form-item>
+        <el-input v-model="fileKeyword" clearable placeholder="文件名关键词" style="width: 200px" />
       </el-form-item>
       <el-form-item>
         <el-button @click="reload">刷新</el-button>
       </el-form-item>
       <el-form-item>
-        <el-button type="success" :disabled="selectedPendingIds.length === 0" @click="confirmBatch(true)">
+        <el-button type="success" :disabled="selectedPendingIds.length === 0" @click="batchReview(true)">
           批量确认
         </el-button>
       </el-form-item>
       <el-form-item>
-        <el-button type="danger" :disabled="selectedPendingIds.length === 0" @click="confirmBatch(false)">
+        <el-button type="danger" :disabled="selectedPendingIds.length === 0" @click="batchReview(false)">
           批量拒绝
         </el-button>
       </el-form-item>
@@ -59,7 +82,7 @@
 
     <el-alert
       v-if="filtered.length === 0"
-      title="暂无待确认实体。通常在上传文件并完成抽取后会产生记录。"
+      title="暂无符合条件的候选记录。请先触发抽取或调整筛选条件。"
       type="info"
       :closable="false"
       style="margin-bottom: 12px"
@@ -67,21 +90,38 @@
 
     <el-table ref="tableRef" :data="filtered" stripe @selection-change="onSelectionChange">
       <el-table-column type="selection" width="52" :selectable="isRowSelectable" />
-      <el-table-column prop="entityType" label="类型" width="120" />
-      <el-table-column prop="entityName" label="名称" min-width="180" />
-      <el-table-column prop="status" label="状态" width="120">
+      <el-table-column label="候选类型" width="110">
+        <template #default="{ row }">
+          <el-tag :type="row.candidateType === 'relation' ? 'warning' : 'success'">
+            {{ row.candidateType === 'relation' ? '关系' : '实体' }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column prop="entityType" label="实体类型" width="110" />
+      <el-table-column prop="entityName" label="候选名称" min-width="200" show-overflow-tooltip />
+      <el-table-column label="关系详情" min-width="260" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ relationText(row) }}
+        </template>
+      </el-table-column>
+      <el-table-column label="置信度" width="100">
+        <template #default="{ row }">
+          {{ formatConfidence(row.confidence) }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="extractMethod" label="抽取方式" width="120" />
+      <el-table-column prop="sourceText" label="来源文本/文件" min-width="220" show-overflow-tooltip />
+      <el-table-column label="状态" width="110">
         <template #default="{ row }">
           <el-tag :type="statusType(row.status)">{{ statusText(row.status) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="extractMethod" label="来源" width="120" />
-      <el-table-column prop="sourceText" label="文件名" min-width="260" show-overflow-tooltip />
-      <el-table-column label="操作" width="220">
+      <el-table-column label="操作" width="200" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" type="success" :disabled="row.status !== 'PENDING'" @click="confirmOne(row.id, true)">
+          <el-button size="small" type="success" :disabled="!isRowSelectable(row)" @click="reviewOne(row.id, true)">
             确认
           </el-button>
-          <el-button size="small" type="danger" :disabled="row.status !== 'PENDING'" @click="confirmOne(row.id, false)">
+          <el-button size="small" type="danger" :disabled="!isRowSelectable(row)" @click="reviewOne(row.id, false)">
             拒绝
           </el-button>
         </template>
@@ -97,36 +137,78 @@ import { useEntityStore } from '../../../stores/entity'
 
 const store = useEntityStore()
 const tableRef = ref()
-const typeFilter = ref<string | undefined>()
-const statusFilter = ref('ALL')
+const statusFilter = ref('PENDING')
+const candidateFilter = ref('ALL')
+const entityTypeFilter = ref<string | undefined>()
+const predicateFilter = ref<string | undefined>()
 const keyword = ref('')
 const fileKeyword = ref('')
-const pendingOnly = ref(true)
 const selectedPendingIds = ref<number[]>([])
 
-onMounted(() => {
-  reload()
+onMounted(async () => {
+  await reload()
+  try {
+    await store.fetchKgExtractionConfig()
+  } catch {
+    // config is auxiliary; ignore fetch failure
+  }
 })
 
-watch(statusFilter, () => {
-  reload()
+watch(statusFilter, async () => {
+  await reload()
 })
+
+const candidateCount = computed(() => ({
+  entity: store.pendingList.filter((it: any) => normalizeCandidateType(it) === 'entity').length,
+  relation: store.pendingList.filter((it: any) => normalizeCandidateType(it) === 'relation').length
+}))
 
 const filtered = computed(() => {
   return store.pendingList.filter((it: any) => {
-    if (pendingOnly.value && String(it.status || '').toUpperCase() !== 'PENDING') return false
-    if (typeFilter.value && it.entityType !== typeFilter.value) return false
-    if (keyword.value && !String(it.entityName || '').toLowerCase().includes(keyword.value.toLowerCase())) return false
-    if (fileKeyword.value && !String(it.sourceText || '').toLowerCase().includes(fileKeyword.value.toLowerCase())) return false
+    const candidateType = normalizeCandidateType(it)
+    const payload = parsePayload(it)
+    const name = String(it.entityName || '').toLowerCase()
+    const source = String(it.sourceText || '').toLowerCase()
+    const predicate = String(payload?.predicate || '').toUpperCase()
+    if (candidateFilter.value !== 'ALL' && candidateType !== candidateFilter.value) return false
+    if (entityTypeFilter.value && String(it.entityType || '') !== entityTypeFilter.value) return false
+    if (predicateFilter.value && predicate !== predicateFilter.value) return false
+    if (keyword.value && !name.includes(keyword.value.toLowerCase())) return false
+    if (fileKeyword.value && !source.includes(fileKeyword.value.toLowerCase())) return false
     return true
   })
 })
 
-const typeCount = computed(() => ({
-  ingredient: store.pendingList.filter((it: any) => it.entityType === 'ingredient').length,
-  effect: store.pendingList.filter((it: any) => it.entityType === 'effect').length,
-  product: store.pendingList.filter((it: any) => it.entityType === 'product').length
-}))
+function normalizeCandidateType(row: any) {
+  return String(row?.candidateType || 'entity').toLowerCase()
+}
+
+function parsePayload(row: any) {
+  const raw = row?.payloadJson
+  if (!raw) return null
+  if (typeof raw === 'object') return raw
+  try {
+    return JSON.parse(String(raw))
+  } catch {
+    return null
+  }
+}
+
+function relationText(row: any) {
+  if (normalizeCandidateType(row) !== 'relation') return '-'
+  const payload = parsePayload(row)
+  if (!payload) return 'payload 缺失'
+  const predicate = String(payload.predicate || '-')
+  const subjectName = String(payload.subjectName || '-')
+  const objectName = String(payload.objectName || '-')
+  return `${subjectName} --${predicate}--> ${objectName}`
+}
+
+function formatConfidence(value: any) {
+  const n = Number(value)
+  if (Number.isNaN(n)) return '-'
+  return n.toFixed(2)
+}
 
 function isRowSelectable(row: any) {
   return String(row?.status || '').toUpperCase() === 'PENDING'
@@ -134,54 +216,53 @@ function isRowSelectable(row: any) {
 
 function onSelectionChange(rows: any[]) {
   selectedPendingIds.value = rows
-    .filter((r) => String(r?.status || '').toUpperCase() === 'PENDING')
-    .map((r) => Number(r.id))
+    .filter((row) => isRowSelectable(row))
+    .map((row) => Number(row.id))
 }
 
 async function reload() {
   try {
-    await Promise.all([store.fetchPending(statusFilter.value), store.fetchPendingCount()])
-    selectedPendingIds.value = []
-  } catch {
-    ElMessage.error('加载待确认实体失败')
-  }
-}
-
-async function confirmOne(id: number, accept: boolean) {
-  try {
-    const result = await store.confirm([{ pendingId: id, accept }], statusFilter.value)
-    const failed = Number(result?.failedCount || 0)
-    if (failed > 0) {
-      ElMessage.warning(`部分成功：成功 ${result.successCount}，失败 ${failed}`)
-    } else {
-      ElMessage.success('操作成功')
-    }
-  } catch (e: any) {
-    ElMessage.error(e?.message || '提交确认失败')
-  }
-}
-
-async function confirmBatch(accept: boolean) {
-  if (!selectedPendingIds.value.length) return
-  const items = selectedPendingIds.value.map((id) => ({ pendingId: id, accept }))
-  try {
-    const result = await store.confirm(items, statusFilter.value)
-    const success = Number(result?.successCount || 0)
-    const failed = Number(result?.failedCount || 0)
-    if (failed > 0) {
-      ElMessage.warning(`批量处理完成：成功 ${success}，失败 ${failed}`)
-    } else {
-      ElMessage.success(`批量处理成功：${success} 条`)
-    }
+    const status = statusFilter.value === 'ALL' ? undefined : statusFilter.value
+    await store.fetchKgPending(status)
     selectedPendingIds.value = []
     tableRef.value?.clearSelection?.()
   } catch (e: any) {
-    ElMessage.error(e?.message || '批量提交失败')
+    ElMessage.error(e?.message || '加载候选失败')
   }
 }
 
+async function reviewOne(id: number, accept: boolean) {
+  try {
+    if (accept) {
+      await store.confirmKgPending(id)
+    } else {
+      await store.rejectKgPending(id)
+    }
+    ElMessage.success('操作成功')
+    await reload()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '提交失败')
+  }
+}
+
+async function batchReview(accept: boolean) {
+  if (!selectedPendingIds.value.length) return
+  const tasks = selectedPendingIds.value.map((id) => {
+    return accept ? store.confirmKgPending(id) : store.rejectKgPending(id)
+  })
+  const result = await Promise.allSettled(tasks)
+  const success = result.filter((it) => it.status === 'fulfilled').length
+  const failed = result.length - success
+  if (failed > 0) {
+    ElMessage.warning(`批量完成：成功 ${success}，失败 ${failed}`)
+  } else {
+    ElMessage.success(`批量处理成功：${success} 条`)
+  }
+  await reload()
+}
+
 function statusText(status?: string) {
-  const s = (status || '').toUpperCase()
+  const s = String(status || '').toUpperCase()
   if (s === 'PENDING') return '待确认'
   if (s === 'CONFIRMED') return '已确认'
   if (s === 'REJECTED') return '已拒绝'
@@ -189,11 +270,10 @@ function statusText(status?: string) {
 }
 
 function statusType(status?: string) {
-  const s = (status || '').toUpperCase()
+  const s = String(status || '').toUpperCase()
+  if (s === 'PENDING') return 'warning'
   if (s === 'CONFIRMED') return 'success'
   if (s === 'REJECTED') return 'danger'
-  if (s === 'PENDING') return 'warning'
   return 'info'
 }
 </script>
-

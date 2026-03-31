@@ -18,5 +18,8 @@ public class RelIngredientEffect {
     private Long effectId;
     private BigDecimal confidence;
     private String source;
+    private String status;
+    private Integer evidenceCount;
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 }

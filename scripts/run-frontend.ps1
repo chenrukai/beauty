@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-$repoRoot = "C:\Users\YLDN\Desktop\beauty"
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $frontendDir = Join-Path $repoRoot "beauty-knowledge-frontend"
 
 Set-Location $frontendDir

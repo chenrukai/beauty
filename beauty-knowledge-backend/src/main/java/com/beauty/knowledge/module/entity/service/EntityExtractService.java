@@ -9,19 +9,26 @@ import com.beauty.knowledge.module.cms.mapper.KbChunkMapper;
 import com.beauty.knowledge.module.cms.mapper.KbFileMapper;
 import com.beauty.knowledge.infrastructure.dictionary.BeautyDictionary;
 import com.beauty.knowledge.module.entity.domain.entity.EntityExtractPending;
+import com.beauty.knowledge.module.entity.domain.entity.BeautyProduct;
+import com.beauty.knowledge.module.entity.mapper.BeautyProductMapper;
 import com.beauty.knowledge.module.entity.mapper.EntityExtractPendingMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 
 @Service
 @Slf4j
@@ -32,9 +39,36 @@ public class EntityExtractService {
     private final BeautyDictionary beautyDictionary;
     private final KbChunkMapper kbChunkMapper;
     private final KbFileMapper kbFileMapper;
+    private final BeautyProductMapper beautyProductMapper;
+    private final ObjectMapper objectMapper;
     private final JdbcTemplate jdbcTemplate;
 
+    @Value("${beauty.kg.extraction.min-segment-length:4}")
+    private int kgMinSegmentLength;
+
+    @Value("${beauty.kg.extraction.product-ingredient-confidence:0.85}")
+    private BigDecimal productIngredientConfidence;
+
+    @Value("${beauty.kg.extraction.ingredient-effect-confidence:0.82}")
+    private BigDecimal ingredientEffectConfidence;
+
+    @Value("${beauty.kg.extraction.product-ingredient-cues:含有,添加,富含,contains,include}")
+    private String productIngredientCues;
+
+    @Value("${beauty.kg.extraction.ingredient-effect-cues:改善,有助于,抑制,缓解,提升,reduce,improve}")
+    private String ingredientEffectCues;
+
     public record ExtractStat(int matchedCount, int insertedCount) {
+    }
+
+    public Map<String, Object> kgExtractionConfig() {
+        return Map.of(
+                "minSegmentLength", Math.max(1, kgMinSegmentLength),
+                "productIngredientConfidence", productIngredientConfidence,
+                "ingredientEffectConfidence", ingredientEffectConfidence,
+                "productIngredientCues", List.copyOf(parseCues(productIngredientCues)),
+                "ingredientEffectCues", List.copyOf(parseCues(ingredientEffectCues))
+        );
     }
 
     public List<EntityExtractPending> pendingList(String status) {
@@ -92,7 +126,9 @@ public class EntityExtractService {
                 insertedCount++;
             }
         }
-        return new ExtractStat(ingredientHits.size() + effectHits.size(), insertedCount);
+
+        int relationInserted = extractRelationCandidates(fileId, safeText);
+        return new ExtractStat(ingredientHits.size() + effectHits.size(), insertedCount + relationInserted);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -144,7 +180,13 @@ public class EntityExtractService {
                     entity_name VARCHAR(120) NOT NULL,
                     source_text VARCHAR(500) DEFAULT NULL,
                     extract_method VARCHAR(20) NOT NULL DEFAULT 'dictionary',
+                    candidate_type VARCHAR(20) NOT NULL DEFAULT 'entity',
+                    payload_json JSON DEFAULT NULL,
+                    confidence DECIMAL(5,4) NOT NULL DEFAULT 0.7000,
                     status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+                    reviewer_id BIGINT DEFAULT NULL,
+                    reviewed_at DATETIME DEFAULT NULL,
+                    review_comment VARCHAR(255) DEFAULT NULL,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     PRIMARY KEY (id),
@@ -186,6 +228,8 @@ public class EntityExtractService {
         row.setEntityName(entityName);
         row.setSourceText(resolveSourceFileName(fileId));
         row.setExtractMethod(method);
+        row.setCandidateType("entity");
+        row.setConfidence(new BigDecimal("0.7000"));
         row.setStatus("PENDING");
         pendingMapper.insert(row);
         return true;
@@ -252,6 +296,249 @@ public class EntityExtractService {
         }
         String name = fileNameById == null ? null : fileNameById.get(fileId);
         return (name == null || name.isBlank()) ? ("file-" + fileId) : name;
+    }
+
+    private int extractRelationCandidates(Long fileId, String text) {
+        List<String> segments = splitSegments(text);
+        if (segments.isEmpty()) {
+            return 0;
+        }
+
+        List<String> productNames = activeProductNames();
+        int inserted = 0;
+        for (String segment : segments) {
+            if (segment == null || segment.isBlank()) {
+                continue;
+            }
+            List<String> products = matchProducts(segment, productNames);
+            List<String> ingredients = beautyDictionary.match(segment);
+            List<String> effects = new ArrayList<>(matchEffects(segment));
+
+            if (containsProductIngredientCue(segment)) {
+                for (String product : products) {
+                    for (String ingredient : ingredients) {
+                        if (insertRelationPendingIfAbsent(
+                                fileId,
+                                "PRODUCT_CONTAINS_INGREDIENT",
+                                product,
+                                ingredient,
+                                segment,
+                                "rule",
+                                productIngredientConfidence,
+                                null
+                        )) {
+                            inserted++;
+                        }
+                    }
+                }
+            }
+
+            if (containsIngredientEffectCue(segment)) {
+                for (String ingredient : ingredients) {
+                    for (String effect : effects) {
+                        if (insertRelationPendingIfAbsent(
+                                fileId,
+                                "INGREDIENT_HAS_EFFECT",
+                                ingredient,
+                                effect,
+                                segment,
+                                "rule",
+                                ingredientEffectConfidence,
+                                null
+                        )) {
+                            inserted++;
+                        }
+                    }
+                }
+            }
+        }
+        return inserted;
+    }
+
+    private List<String> splitSegments(String text) {
+        if (text == null || text.isBlank()) {
+            return List.of();
+        }
+        String[] parts = text.split("[\\r\\n。！？；;.!?]+");
+        List<String> segments = new ArrayList<>(parts.length);
+        for (String part : parts) {
+            if (part == null) {
+                continue;
+            }
+            String trimmed = part.trim();
+            if (trimmed.length() >= Math.max(1, kgMinSegmentLength)) {
+                segments.add(trimmed);
+            }
+        }
+        return segments;
+    }
+
+    private List<String> activeProductNames() {
+        List<BeautyProduct> rows = beautyProductMapper.selectList(new LambdaQueryWrapper<BeautyProduct>()
+                .select(BeautyProduct::getName)
+                .eq(BeautyProduct::getStatus, 1));
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        List<String> names = new ArrayList<>(rows.size());
+        for (BeautyProduct row : rows) {
+            if (row == null || row.getName() == null || row.getName().isBlank()) {
+                continue;
+            }
+            names.add(row.getName().trim());
+        }
+        return names;
+    }
+
+    private List<String> matchProducts(String text, List<String> productNames) {
+        if (text == null || text.isBlank() || productNames == null || productNames.isEmpty()) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>();
+        for (String name : productNames) {
+            if (text.contains(name)) {
+                out.add(name);
+            }
+        }
+        return out;
+    }
+
+    private boolean containsProductIngredientCue(String segment) {
+        String lower = segment.toLowerCase(Locale.ROOT);
+        for (String cue : parseCues(productIngredientCues)) {
+            if (lower.contains(cue)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean containsIngredientEffectCue(String segment) {
+        String lower = segment.toLowerCase(Locale.ROOT);
+        for (String cue : parseCues(ingredientEffectCues)) {
+            if (lower.contains(cue)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean insertRelationPendingIfAbsent(Long fileId,
+                                                  String predicate,
+                                                  String subjectName,
+                                                  String objectName,
+                                                  String sourceText,
+                                                  String method,
+                                                  BigDecimal confidence,
+                                                  Integer pageNo) {
+        if (subjectName == null || subjectName.isBlank() || objectName == null || objectName.isBlank()) {
+            return false;
+        }
+        String relationName = predicate + ":" + subjectName + "->" + objectName;
+        Long exists = pendingMapper.selectCount(new LambdaQueryWrapper<EntityExtractPending>()
+                .eq(EntityExtractPending::getFileId, fileId)
+                .eq(EntityExtractPending::getCandidateType, "relation")
+                .eq(EntityExtractPending::getEntityName, relationName));
+        if (exists != null && exists > 0) {
+            return false;
+        }
+
+        String payloadJson = buildRelationPayloadJson(predicate, subjectName, objectName, confidence, pageNo);
+        EntityExtractPending row = new EntityExtractPending();
+        row.setFileId(fileId);
+        row.setEntityType("relation");
+        row.setEntityName(relationName);
+        row.setSourceText(clipSourceText(sourceText));
+        row.setExtractMethod(method);
+        row.setCandidateType("relation");
+        row.setPayloadJson(payloadJson);
+        row.setConfidence(confidence == null ? new BigDecimal("0.7000") : confidence);
+        row.setStatus("PENDING");
+        pendingMapper.insert(row);
+        return true;
+    }
+
+    private String buildRelationPayloadJson(String predicate,
+                                            String subjectName,
+                                            String objectName,
+                                            BigDecimal confidence,
+                                            Integer pageNo) {
+        try {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("predicate", predicate);
+            payload.put("subjectName", subjectName);
+            payload.put("objectName", objectName);
+            payload.put("confidence", confidence);
+            payload.put("pageNo", pageNo);
+            payload.put("subjectId", resolveEntityIdByName(predicate, true, subjectName));
+            payload.put("objectId", resolveEntityIdByName(predicate, false, objectName));
+            return objectMapper.writeValueAsString(payload);
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "build relation payload failed");
+        }
+    }
+
+    private Long resolveEntityIdByName(String predicate, boolean subject, String name) {
+        String safePredicate = predicate == null ? "" : predicate.trim().toUpperCase(Locale.ROOT);
+        String safeName = name == null ? "" : name.trim();
+        if (safeName.isBlank()) {
+            return null;
+        }
+        switch (safePredicate) {
+            case "PRODUCT_CONTAINS_INGREDIENT" -> {
+                if (subject) {
+                    BeautyProduct p = beautyProductMapper.selectOne(new LambdaQueryWrapper<BeautyProduct>()
+                            .eq(BeautyProduct::getName, safeName)
+                            .last("limit 1"));
+                    return p == null ? null : p.getId();
+                }
+                Long ingredientId = resolveIngredientIdByName(safeName);
+                return ingredientId;
+            }
+            case "INGREDIENT_HAS_EFFECT" -> {
+                if (subject) {
+                    return resolveIngredientIdByName(safeName);
+                }
+                return resolveEffectIdByName(safeName);
+            }
+            default -> {
+                return null;
+            }
+        }
+    }
+
+    private Long resolveIngredientIdByName(String name) {
+        return jdbcTemplate.query(
+                        "SELECT id FROM beauty_ingredient WHERE name = ? LIMIT 1",
+                        rs -> rs.next() ? rs.getLong(1) : null,
+                        name
+                );
+    }
+
+    private Long resolveEffectIdByName(String name) {
+        return jdbcTemplate.query(
+                "SELECT id FROM beauty_effect WHERE name = ? LIMIT 1",
+                rs -> rs.next() ? rs.getLong(1) : null,
+                name
+        );
+    }
+
+    private Set<String> parseCues(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return Set.of();
+        }
+        String[] parts = raw.split(",");
+        Set<String> cues = new LinkedHashSet<>();
+        for (String part : parts) {
+            if (part == null) {
+                continue;
+            }
+            String cue = part.trim().toLowerCase(Locale.ROOT);
+            if (!cue.isBlank()) {
+                cues.add(cue);
+            }
+        }
+        return cues;
     }
 
     private String clipSourceText(String text) {

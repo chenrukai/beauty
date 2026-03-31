@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-$repoRoot = "C:\Users\YLDN\Desktop\beauty"
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $backendDir = Join-Path $repoRoot "beauty-knowledge-backend"
 $envFile = Join-Path $backendDir ".env"
 $dockerDesktop = "C:\Program Files\Docker\Docker\Docker Desktop.exe"

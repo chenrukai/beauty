@@ -11,6 +11,7 @@ import FileUploadPage from '../views/admin/knowledge/FileUpload.vue'
 import KnowledgeListPage from '../views/admin/knowledge/KnowledgeList.vue'
 import CategoryTreePage from '../views/admin/category/CategoryTree.vue'
 import ExtractConfirmPage from '../views/admin/entity/ExtractConfirm.vue'
+import KnowledgeGraphPage from '../views/admin/entity/KnowledgeGraph.vue'
 import TaskMonitorPage from '../views/admin/task/TaskMonitor.vue'
 import UserManagePage from '../views/admin/user/UserManage.vue'
 import NoticeManagePage from '../views/admin/system/NoticeManage.vue'
@@ -29,6 +30,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'knowledge/list', component: KnowledgeListPage },
       { path: 'category/tree', component: CategoryTreePage },
       { path: 'entity/confirm', component: ExtractConfirmPage },
+      { path: 'entity/graph', component: KnowledgeGraphPage },
       { path: 'task/monitor', component: TaskMonitorPage },
       { path: 'user/manage', component: UserManagePage },
       { path: 'system/notice', component: NoticeManagePage },

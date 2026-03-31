@@ -1,4 +1,4 @@
-package com.beauty.knowledge.module.entity.domain.entity;
+package com.beauty.knowledge.module.kg.domain.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -9,23 +9,22 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("entity_extract_pending")
-public class EntityExtractPending {
+@TableName("kg_evidence")
+public class KgEvidence {
 
     @TableId(type = IdType.AUTO)
     private Long id;
+    private String relationType;
+    private String subjectType;
+    private Long subjectId;
+    private String objectType;
+    private Long objectId;
     private Long fileId;
-    private String entityType;
-    private String entityName;
+    private Long chunkId;
+    private Integer pageNo;
     private String sourceText;
-    private String extractMethod;
-    private String candidateType;
-    private String payloadJson;
+    private String extractor;
     private BigDecimal confidence;
-    private String status;
     private Long reviewerId;
-    private LocalDateTime reviewedAt;
-    private String reviewComment;
     private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
 }

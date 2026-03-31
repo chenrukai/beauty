@@ -71,6 +71,13 @@ beauty:
     embed-batch-size: 32
     chunk-size: 400
     chunk-overlap: 80
+  kg:
+    extraction:
+      min-segment-length: 4
+      product-ingredient-confidence: 0.85
+      ingredient-effect-confidence: 0.82
+      product-ingredient-cues: 含有,添加,富含,contains,include
+      ingredient-effect-cues: 改善,有助于,抑制,缓解,提升,reduce,improve
   vector:
     warmup-enabled: true
     warmup-batch-size: 200
