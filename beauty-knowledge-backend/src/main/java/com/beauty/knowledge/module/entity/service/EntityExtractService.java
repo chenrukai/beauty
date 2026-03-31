@@ -194,6 +194,30 @@ public class EntityExtractService {
                     KEY idx_entity_type (entity_type)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """);
+        ensureColumnExists("entity_extract_pending", "candidate_type", "ALTER TABLE entity_extract_pending ADD COLUMN candidate_type VARCHAR(20) NOT NULL DEFAULT 'entity' COMMENT 'entity/relation'");
+        ensureColumnExists("entity_extract_pending", "payload_json", "ALTER TABLE entity_extract_pending ADD COLUMN payload_json JSON DEFAULT NULL COMMENT 'normalized payload'");
+        ensureColumnExists("entity_extract_pending", "confidence", "ALTER TABLE entity_extract_pending ADD COLUMN confidence DECIMAL(5,4) NOT NULL DEFAULT 0.7000");
+        ensureColumnExists("entity_extract_pending", "reviewer_id", "ALTER TABLE entity_extract_pending ADD COLUMN reviewer_id BIGINT DEFAULT NULL");
+        ensureColumnExists("entity_extract_pending", "reviewed_at", "ALTER TABLE entity_extract_pending ADD COLUMN reviewed_at DATETIME DEFAULT NULL");
+        ensureColumnExists("entity_extract_pending", "review_comment", "ALTER TABLE entity_extract_pending ADD COLUMN review_comment VARCHAR(255) DEFAULT NULL");
+    }
+
+    private void ensureColumnExists(String tableName, String columnName, String alterSql) {
+        Integer count = jdbcTemplate.queryForObject(
+                """
+                        SELECT COUNT(1)
+                        FROM information_schema.columns
+                        WHERE table_schema = DATABASE()
+                          AND table_name = ?
+                          AND column_name = ?
+                        """,
+                Integer.class,
+                tableName,
+                columnName
+        );
+        if (count == null || count <= 0) {
+            jdbcTemplate.execute(alterSql);
+        }
     }
 
     private Set<String> matchEffects(String text) {
