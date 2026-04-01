@@ -147,7 +147,9 @@ export const useChatStore = defineStore('chat', () => {
             sources.value = payload.sources || []
             const last = messages.value[messages.value.length - 1]
             if (last) {
-              if (!last.content && payload.content) {
+              if (payload.content) {
+                // Always trust the final "done" payload, because backend may append
+                // normalized post-processing text (e.g. KG insight summary) after streaming.
                 last.content = payload.content
               }
               last.sources = sources.value
