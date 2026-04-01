@@ -175,7 +175,7 @@ async function submitPrimary() {
   overflow: hidden;
   border-radius: 28px;
   border: 1px solid rgba(26, 70, 62, 0.08);
-  box-shadow: 0 30px 80px rgba(28, 44, 42, 0.08);
+  box-shadow: var(--app-shadow-md);
 }
 
 .hero-panel {
@@ -331,6 +331,34 @@ h1 {
   font-size: 16px;
 }
 
+html[data-theme='night'] .hero-panel {
+  background:
+    radial-gradient(circle at top left, rgba(125, 194, 255, 0.18), transparent 32%),
+    linear-gradient(135deg, #19324d 0%, #18263b 48%, #111a2a 48%, #121d2e 100%);
+  color: #eef5ff;
+}
+
+html[data-theme='night'] .auth-panel {
+  background:
+    radial-gradient(circle at top right, rgba(125, 194, 255, 0.12), transparent 32%),
+    linear-gradient(180deg, #1b2739 0%, #162234 100%);
+  border-color: rgba(125, 194, 255, 0.18);
+}
+
+html[data-theme='night'] .panel-head h2,
+html[data-theme='night'] .panel-note,
+html[data-theme='night'] .switch-row {
+  color: #dbe8fb;
+}
+
+html[data-theme='night'] .panel-kicker {
+  color: #9ec8ff;
+}
+
+html[data-theme='night'] .mode-switch {
+  color: #9ec8ff;
+}
+
 @media (max-width: 1180px) {
   .login-page {
     grid-template-columns: 1fr;
@@ -343,6 +371,10 @@ h1 {
 
   .hero-metrics {
     grid-template-columns: 1fr;
+  }
+
+  .auth-panel {
+    padding: 26px;
   }
 }
 </style>

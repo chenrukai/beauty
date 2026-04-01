@@ -1,10 +1,10 @@
 <template>
-  <el-card>
+  <el-card class="upload-page">
     <template #header>文件上传与入队</template>
 
     <el-row :gutter="16">
       <el-col :xs="24" :lg="14">
-        <el-form label-width="120px">
+        <el-form label-width="120px" class="upload-form">
           <el-form-item label="所属知识">
             <el-select
               v-model="knowledgeId"
@@ -40,6 +40,7 @@
 
           <el-form-item label="选择文件">
             <input
+              class="native-file-input"
               type="file"
               accept=".txt,.md,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg,.webp,.bmp,.gif,.mp4,.mov,.avi,.mkv,.webm,.m4v"
               @change="onFile"
@@ -54,7 +55,7 @@
       </el-col>
 
       <el-col :xs="24" :lg="10">
-        <el-card shadow="never">
+        <el-card shadow="never" class="hint-card">
           <template #header>辅助信息</template>
           <div class="hint">已选知识：{{ selectedKnowledgeTitle }}</div>
           <div class="hint">已选分类：{{ selectedCategoryLabel }}</div>
@@ -232,8 +233,44 @@ async function upload() {
 </script>
 
 <style scoped>
+.upload-page {
+  --panel-gap: 14px;
+}
+
+.upload-form {
+  padding: 12px 14px;
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--app-card-bg) 92%, transparent);
+}
+
+.upload-form :deep(.el-form-item) {
+  margin-bottom: 16px;
+}
+
+.native-file-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px dashed var(--app-border);
+  border-radius: 10px;
+  background: var(--app-card-bg);
+  color: var(--app-text);
+}
+
+.hint-card {
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+}
+
 .hint {
   margin-bottom: 10px;
-  color: #475569;
+  color: var(--app-text-muted);
+  line-height: 1.65;
+}
+
+@media (max-width: 1100px) {
+  .upload-form {
+    margin-bottom: 12px;
+  }
 }
 </style>

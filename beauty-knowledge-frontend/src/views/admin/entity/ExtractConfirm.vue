@@ -1,8 +1,8 @@
 <template>
-  <el-card>
+  <el-card class="extract-confirm-page">
     <template #header>实体与关系候选确认</template>
 
-    <el-row :gutter="12" style="margin-bottom: 12px">
+    <el-row :gutter="12" class="stats-row">
       <el-col :xs="24" :sm="6">
         <el-statistic title="待确认总数" :value="store.pendingCount" />
       </el-col>
@@ -32,7 +32,7 @@
       </template>
     </el-alert>
 
-    <el-form inline>
+    <el-form inline class="toolbar">
       <el-form-item>
         <el-select v-model="statusFilter" style="width: 150px">
           <el-option label="全部状态" value="ALL" />
@@ -84,7 +84,7 @@
     </el-form>
 
     <el-divider content-position="left">第二步：关系候选生成（演示可用）</el-divider>
-    <el-form inline style="margin-bottom: 12px">
+    <el-form inline class="seed-toolbar">
       <el-form-item label="文件ID">
         <el-input-number v-model="demoFileId" :min="1" :step="1" controls-position="right" style="width: 180px" />
       </el-form-item>
@@ -109,7 +109,7 @@
       style="margin-bottom: 12px"
     />
 
-    <el-table ref="tableRef" :data="filtered" stripe @selection-change="onSelectionChange">
+    <el-table ref="tableRef" :data="filtered" stripe class="data-table" @selection-change="onSelectionChange">
       <el-table-column type="selection" width="52" :selectable="isRowSelectable" />
       <el-table-column label="候选类型" width="110">
         <template #default="{ row }">
@@ -322,3 +322,39 @@ function statusType(status?: string) {
   return 'info'
 }
 </script>
+
+<style scoped>
+.extract-confirm-page {
+  --panel-gap: 14px;
+}
+
+.stats-row {
+  margin-bottom: var(--panel-gap);
+}
+
+.toolbar,
+.seed-toolbar {
+  padding: 10px 12px;
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--app-card-bg) 92%, transparent);
+}
+
+.toolbar {
+  margin-bottom: 10px;
+}
+
+.seed-toolbar {
+  margin-bottom: var(--panel-gap);
+}
+
+.toolbar :deep(.el-form-item),
+.seed-toolbar :deep(.el-form-item) {
+  margin-bottom: 8px;
+}
+
+.data-table {
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+}
+</style>

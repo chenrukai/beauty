@@ -1,10 +1,10 @@
 <template>
-  <el-card>
+  <el-card class="kg-page">
     <template #header>知识图谱工作台（演示版）</template>
 
     <el-row :gutter="16" style="margin-bottom: 12px">
       <el-col :xs="24" :md="12">
-        <el-card shadow="never">
+        <el-card shadow="never" class="panel-card">
           <template #header>1) 产品图谱预览</template>
           <el-form label-width="92px">
             <el-form-item label="选择产品">
@@ -27,7 +27,7 @@
       </el-col>
 
       <el-col :xs="24" :md="12">
-        <el-card shadow="never">
+        <el-card shadow="never" class="panel-card">
           <template #header>2) 两点关系路径</template>
           <el-form label-width="72px">
             <el-row :gutter="8">
@@ -92,7 +92,7 @@
       <el-col :xs="24" :lg="14">
         <el-card shadow="never">
           <template #header>3) 关系清单（可查证据）</template>
-          <el-table :data="graphEdges" stripe height="420">
+          <el-table :data="graphEdges" stripe height="420" class="data-table">
             <el-table-column label="关系语义" min-width="320" show-overflow-tooltip>
               <template #default="{ row }">
                 {{ edgeSentence(row) }}
@@ -118,7 +118,7 @@
       </el-col>
 
       <el-col :xs="24" :lg="10">
-        <el-card shadow="never">
+        <el-card shadow="never" class="panel-card">
           <template #header>关系证据</template>
           <el-empty v-if="evidenceList.length === 0" description="请选择一条关系查看证据" />
           <el-timeline v-else>
@@ -330,9 +330,42 @@ function parseNodeKey(nodeKey: string) {
 </script>
 
 <style scoped>
+.kg-page {
+  --panel-gap: 14px;
+}
+
+.panel-card {
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+}
+
+.panel-card :deep(.el-card__header) {
+  font-weight: 600;
+}
+
+.panel-card :deep(.el-form-item) {
+  margin-bottom: 16px;
+}
+
+.panel-card :deep(.el-alert) {
+  margin-top: 8px;
+}
+
+.data-table {
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+}
+
 .evidence-text {
   color: var(--app-text-muted, #666);
   white-space: pre-wrap;
   word-break: break-word;
+  line-height: 1.7;
+}
+
+@media (max-width: 1200px) {
+  .kg-page {
+    --panel-gap: 12px;
+  }
 }
 </style>

@@ -1,8 +1,8 @@
 <template>
-  <el-card>
+  <el-card class="knowledge-list-page">
     <template #header>知识列表</template>
 
-    <el-row :gutter="12" style="margin-bottom: 12px">
+    <el-row :gutter="12" class="stats-row">
       <el-col :xs="12" :sm="8" :md="6">
         <el-statistic title="当前页条数" :value="store.knowledgeList.length" />
       </el-col>
@@ -17,7 +17,7 @@
       </el-col>
     </el-row>
 
-    <el-form inline>
+    <el-form inline class="toolbar">
       <el-form-item>
         <el-input
           v-model="keyword"
@@ -44,7 +44,7 @@
       </el-form-item>
     </el-form>
 
-    <el-table :data="store.knowledgeList" stripe>
+    <el-table :data="store.knowledgeList" stripe class="data-table">
       <el-table-column prop="title" label="标题" min-width="220" show-overflow-tooltip />
       <el-table-column prop="status" label="状态" width="110">
         <template #default="{ row }">
@@ -363,21 +363,46 @@ async function submitCreate() {
 
 <style scoped>
 .pager {
-  margin-top: 12px;
+  margin-top: 14px;
   display: flex;
   justify-content: flex-end;
+}
+
+.knowledge-list-page {
+  --panel-gap: 14px;
+}
+
+.stats-row {
+  margin-bottom: var(--panel-gap);
+}
+
+.toolbar {
+  margin-bottom: var(--panel-gap);
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--app-border);
+  background: color-mix(in srgb, var(--app-card-bg) 92%, transparent);
+}
+
+.toolbar :deep(.el-form-item) {
+  margin-bottom: 8px;
+}
+
+.data-table {
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
 }
 
 .content {
   white-space: pre-wrap;
   line-height: 1.8;
-  color: #334155;
+  color: var(--app-text);
 }
 
 .files-title {
   margin-bottom: 10px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--app-text);
 }
 </style>
 

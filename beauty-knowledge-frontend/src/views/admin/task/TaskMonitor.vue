@@ -1,8 +1,8 @@
 <template>
-  <el-card>
+  <el-card class="task-monitor-page">
     <template #header>任务监控</template>
 
-    <el-form inline>
+    <el-form inline class="toolbar">
       <el-form-item>
         <el-button @click="loadRecent">刷新最近任务</el-button>
       </el-form-item>
@@ -13,7 +13,7 @@
       </el-form-item>
     </el-form>
 
-    <el-descriptions v-if="task" :column="2" border style="margin-bottom: 12px">
+    <el-descriptions v-if="task" :column="2" border class="task-detail">
       <el-descriptions-item label="状态">
         <el-tag :type="taskStatusType(task.stageCode || task.status)">{{ taskStatusText(task.stageCode || task.status) }}</el-tag>
       </el-descriptions-item>
@@ -38,7 +38,7 @@
       style="margin-bottom: 12px"
     />
 
-    <el-table :data="pagedTasks" stripe>
+    <el-table :data="pagedTasks" stripe class="data-table">
       <el-table-column prop="fileName" label="文件名" min-width="220" show-overflow-tooltip />
       <el-table-column prop="knowledgeTitle" label="所属知识" min-width="220" show-overflow-tooltip />
       <el-table-column label="类型" width="130">
@@ -306,8 +306,33 @@ function toggleAutoRefresh() {
 
 <style scoped>
 .pager {
-  margin-top: 12px;
+  margin-top: 14px;
   display: flex;
   justify-content: flex-end;
+}
+
+.task-monitor-page {
+  --panel-gap: 14px;
+}
+
+.toolbar {
+  margin-bottom: var(--panel-gap);
+  padding: 10px 12px;
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--app-card-bg) 92%, transparent);
+}
+
+.toolbar :deep(.el-form-item) {
+  margin-bottom: 8px;
+}
+
+.task-detail {
+  margin-bottom: var(--panel-gap);
+}
+
+.data-table {
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
 }
 </style>

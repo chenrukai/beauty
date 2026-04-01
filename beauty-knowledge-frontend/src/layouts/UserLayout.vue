@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="user-shell">
     <header class="topbar">
       <div class="brand">
@@ -58,20 +58,24 @@ async function onLogout() {
 }
 
 .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 20px 24px;
+  padding: 16px 20px;
   background: var(--user-topbar-bg);
   color: var(--user-topbar-text);
   box-shadow: var(--user-topbar-shadow);
+  backdrop-filter: blur(8px);
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
 }
 
 .brand strong {
@@ -86,7 +90,7 @@ async function onLogout() {
 }
 
 .brand-badge {
-  padding: 10px 14px;
+  padding: 9px 14px;
   border-radius: 999px;
   background: rgba(255, 248, 223, 0.16);
   border: 1px solid rgba(255, 248, 223, 0.24);
@@ -126,7 +130,7 @@ async function onLogout() {
 
 .user-pill {
   padding: 10px 14px;
-  border-radius: 18px;
+  border-radius: 14px;
   background: var(--user-pill-bg);
   min-width: 124px;
 }
@@ -139,18 +143,19 @@ async function onLogout() {
 
 .logout-btn {
   border: none;
-  border-radius: 14px;
+  border-radius: 12px;
 }
 
 .shell-body {
   padding: 18px;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 980px) {
   .topbar {
+    position: static;
     flex-direction: column;
     align-items: flex-start;
-    padding: 16px;
+    padding: 14px;
   }
 
   .actions {

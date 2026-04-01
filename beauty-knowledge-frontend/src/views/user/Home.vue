@@ -23,7 +23,7 @@
       </template>
     </el-alert>
 
-    <el-card shadow="never">
+    <el-card shadow="never" class="recommend-card">
       <template #header>
         <div class="head">
           <strong>知识推荐</strong>
@@ -223,18 +223,19 @@ async function recordAction(actionType: string, payload: any = {}) {
 <style scoped>
 .home-page {
   display: grid;
-  gap: 12px;
+  gap: 14px;
 }
 
 .hero {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  border-radius: 14px;
-  padding: 18px;
+  gap: 16px;
+  border-radius: 16px;
+  padding: 20px;
   background: linear-gradient(130deg, #0f766e 0%, #1f9d8f 75%);
   color: #fff;
+  box-shadow: var(--app-shadow-sm);
 }
 
 .hero h2 {
@@ -250,6 +251,10 @@ async function recordAction(actionType: string, payload: any = {}) {
 .hero-actions {
   display: flex;
   gap: 10px;
+}
+
+.hero-actions :deep(.el-button) {
+  border-radius: 10px;
 }
 
 .head {
@@ -269,14 +274,25 @@ async function recordAction(actionType: string, payload: any = {}) {
 .recommend-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  gap: 12px;
+}
+
+.recommend-card {
+  border: 1px solid var(--app-border);
+  border-radius: 14px;
 }
 
 .recommend-item {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--app-border);
   border-radius: 12px;
-  background: #fafafa;
+  background: color-mix(in srgb, var(--app-card-bg) 86%, transparent);
   padding: 12px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.recommend-item:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--app-shadow-sm);
 }
 
 .recommend-item h4 {
@@ -286,13 +302,13 @@ async function recordAction(actionType: string, payload: any = {}) {
 
 .recommend-meta {
   margin-bottom: 6px;
-  color: #64748b;
+  color: var(--app-text-muted);
   font-size: 12px;
 }
 
 .recommend-content {
   margin: 0;
-  color: #475569;
+  color: var(--app-text);
   line-height: 1.6;
 }
 
@@ -303,7 +319,7 @@ async function recordAction(actionType: string, payload: any = {}) {
 }
 
 .muted {
-  color: #64748b;
+  color: var(--app-text-muted);
 }
 
 .pager {
@@ -313,14 +329,14 @@ async function recordAction(actionType: string, payload: any = {}) {
 }
 
 .dialog-summary {
-  color: #64748b;
+  color: var(--app-text-muted);
   margin-bottom: 10px;
 }
 
 .dialog-content {
   white-space: pre-wrap;
   line-height: 1.8;
-  color: #334155;
+  color: var(--app-text);
 }
 
 .dialog-actions {
