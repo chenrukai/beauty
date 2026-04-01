@@ -5,6 +5,20 @@ import com.beauty.knowledge.common.exception.ErrorCode;
 import com.beauty.knowledge.infrastructure.ai.llm.LLMProvider;
 import com.beauty.knowledge.infrastructure.ai.python.PythonAIClient;
 import com.beauty.knowledge.infrastructure.storage.MinioStorageService;
+import com.beauty.knowledge.module.entity.domain.entity.BeautyEffect;
+import com.beauty.knowledge.module.entity.domain.entity.BeautyIngredient;
+import com.beauty.knowledge.module.entity.domain.entity.BeautyProduct;
+import com.beauty.knowledge.module.entity.domain.entity.RelIngredientEffect;
+import com.beauty.knowledge.module.entity.domain.entity.RelProductEffect;
+import com.beauty.knowledge.module.entity.domain.entity.RelProductIngredient;
+import com.beauty.knowledge.module.entity.mapper.BeautyEffectMapper;
+import com.beauty.knowledge.module.entity.mapper.BeautyIngredientMapper;
+import com.beauty.knowledge.module.entity.mapper.BeautyProductMapper;
+import com.beauty.knowledge.module.entity.mapper.RelIngredientEffectMapper;
+import com.beauty.knowledge.module.entity.mapper.RelProductEffectMapper;
+import com.beauty.knowledge.module.entity.mapper.RelProductIngredientMapper;
+import com.beauty.knowledge.module.kg.domain.entity.KgEvidence;
+import com.beauty.knowledge.module.kg.mapper.KgEvidenceMapper;
 import com.beauty.knowledge.module.rag.domain.dto.ChatMessage;
 import com.beauty.knowledge.module.rag.domain.dto.ChatRequest;
 import com.beauty.knowledge.module.rag.domain.dto.ChatStreamChunk;
@@ -22,10 +36,12 @@ import org.springframework.web.multipart.MultipartFile;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 
 import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
@@ -52,6 +68,13 @@ public class ChatService {
     private final ObjectProvider<LLMProvider> llmProviderObjectProvider;
     private final PythonAIClient pythonAIClient;
     private final MinioStorageService minioStorageService;
+    private final BeautyProductMapper beautyProductMapper;
+    private final BeautyIngredientMapper beautyIngredientMapper;
+    private final BeautyEffectMapper beautyEffectMapper;
+    private final RelProductIngredientMapper relProductIngredientMapper;
+    private final RelIngredientEffectMapper relIngredientEffectMapper;
+    private final RelProductEffectMapper relProductEffectMapper;
+    private final KgEvidenceMapper kgEvidenceMapper;
     private final Tika tika = new Tika();
 
     @Value("${beauty.rag.display-source-top:4}")
@@ -81,6 +104,15 @@ public class ChatService {
         List<ChunkResult> sources = hybridSearchService.search(request.getQuestion(), request.getCategoryId());
         List<ChunkResult> filteredSources = filterSourcesByQuestion(sources, request.getQuestion());
         String systemPrompt = promptService.buildSystemPrompt(intent, filteredSources);
+        String kgInsightContext = buildKgInsightContext(request.getQuestion());
+        String kgInsightSummary = buildKgInsightSummary(request.getQuestion());
+        if (StringUtils.hasText(kgInsightContext)) {
+            systemPrompt = systemPrompt + "\n\nKnowledge Graph Context (verified relations):\n"
+                    + kgInsightContext
+                    + "\nPlease prioritize this structured graph context together with cited KB chunks.";
+        }
+        final String finalSystemPrompt = systemPrompt;
+        final String finalKgInsightSummary = kgInsightSummary;
         List<com.beauty.knowledge.infrastructure.ai.llm.dto.ChatMessage> history = contextService.getRecentHistory(userId).stream()
                 .map(h -> com.beauty.knowledge.infrastructure.ai.llm.dto.ChatMessage.builder()
                         .role(h.getRole())
@@ -89,7 +121,7 @@ public class ChatService {
                 .toList();
 
         AtomicReference<StringBuilder> answerRef = new AtomicReference<>(new StringBuilder());
-        Flux<ChatStreamChunk> tokenFlux = llmProvider.streamChat(systemPrompt, request.getQuestion(), history)
+        Flux<ChatStreamChunk> tokenFlux = llmProvider.streamChat(finalSystemPrompt, request.getQuestion(), history)
                 .map(token -> {
                     answerRef.get().append(token);
                     return ChatStreamChunk.builder()
@@ -105,13 +137,16 @@ public class ChatService {
                         return Mono.just(current);
                     }
                     // Stream may fail on some local models; fallback once to non-stream chat.
-                    return llmProvider.chatAsync(systemPrompt, request.getQuestion())
+                    return llmProvider.chatAsync(finalSystemPrompt, request.getQuestion())
                             .defaultIfEmpty("");
                 })
                 .map(answer -> {
                     String finalAnswer = (answer == null || answer.isBlank())
                             ? "AI service is temporarily unavailable. Please check Ollama/model configuration and try again."
                             : answer;
+                    if (StringUtils.hasText(finalKgInsightSummary) && !finalAnswer.contains("【图谱洞察摘要】")) {
+                        finalAnswer = "【图谱洞察摘要】" + finalKgInsightSummary + "\n\n" + finalAnswer;
+                    }
                     List<ChunkResult> displaySources = buildDisplaySources(filteredSources);
                     chatRecordService.saveAssistantAnswer(sessionId, finalAnswer, displaySources);
                     contextService.appendRound(userId, request.getQuestion(), finalAnswer);
@@ -260,6 +295,144 @@ public class ChatService {
         return new UploadAttachment(ctx.fileName(), contentType, bytes);
     }
 
+    public Map<String, Object> productInsight(Long productId) {
+        if (productId == null || productId <= 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "productId is required");
+        }
+        BeautyProduct product = beautyProductMapper.selectById(productId);
+        if (product == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "product not found");
+        }
+
+        List<RelProductIngredient> productIngredients = relProductIngredientMapper.selectList(
+                new LambdaQueryWrapper<RelProductIngredient>()
+                        .eq(RelProductIngredient::getProductId, productId)
+                        .eq(RelProductIngredient::getStatus, "ACTIVE")
+                        .orderByDesc(RelProductIngredient::getConfidence)
+                        .orderByDesc(RelProductIngredient::getId)
+        );
+
+        Set<Long> ingredientIdSet = new LinkedHashSet<>();
+        for (RelProductIngredient rel : productIngredients) {
+            if (rel != null && rel.getIngredientId() != null) {
+                ingredientIdSet.add(rel.getIngredientId());
+            }
+        }
+        List<Long> ingredientIds = new ArrayList<>(ingredientIdSet);
+        Map<Long, String> ingredientNameById = new ConcurrentHashMap<>();
+        if (!ingredientIds.isEmpty()) {
+            List<BeautyIngredient> ingredientRows = beautyIngredientMapper.selectBatchIds(ingredientIds);
+            if (ingredientRows != null) {
+                for (BeautyIngredient row : ingredientRows) {
+                    if (row != null && row.getId() != null) {
+                        ingredientNameById.put(row.getId(), row.getName());
+                    }
+                }
+            }
+        }
+
+        List<RelIngredientEffect> ingredientEffects = ingredientIds.isEmpty()
+                ? List.of()
+                : relIngredientEffectMapper.selectList(
+                new LambdaQueryWrapper<RelIngredientEffect>()
+                        .in(RelIngredientEffect::getIngredientId, ingredientIds)
+                        .eq(RelIngredientEffect::getStatus, "ACTIVE")
+                        .orderByDesc(RelIngredientEffect::getConfidence)
+                        .orderByDesc(RelIngredientEffect::getId)
+        );
+
+        List<RelProductEffect> productEffects = relProductEffectMapper.selectList(
+                new LambdaQueryWrapper<RelProductEffect>()
+                        .eq(RelProductEffect::getProductId, productId)
+                        .eq(RelProductEffect::getStatus, "ACTIVE")
+                        .orderByDesc(RelProductEffect::getConfidence)
+                        .orderByDesc(RelProductEffect::getId)
+        );
+
+        Set<Long> inferredEffectIds = new LinkedHashSet<>();
+        for (RelIngredientEffect rel : ingredientEffects) {
+            if (rel != null && rel.getEffectId() != null) {
+                inferredEffectIds.add(rel.getEffectId());
+            }
+        }
+        Set<Long> directEffectIds = new LinkedHashSet<>();
+        for (RelProductEffect rel : productEffects) {
+            if (rel != null && rel.getEffectId() != null) {
+                directEffectIds.add(rel.getEffectId());
+            }
+        }
+
+        Set<Long> allEffectIds = new LinkedHashSet<>(inferredEffectIds);
+        allEffectIds.addAll(directEffectIds);
+        Map<Long, String> effectNameById = new ConcurrentHashMap<>();
+        if (!allEffectIds.isEmpty()) {
+            List<BeautyEffect> effectRows = beautyEffectMapper.selectBatchIds(allEffectIds);
+            if (effectRows != null) {
+                for (BeautyEffect row : effectRows) {
+                    if (row != null && row.getId() != null) {
+                        effectNameById.put(row.getId(), row.getName());
+                    }
+                }
+            }
+        }
+
+        List<String> ingredientNames = toNameList(ingredientIds, ingredientNameById, 8);
+        List<String> directEffectNames = toNameList(new ArrayList<>(directEffectIds), effectNameById, 8);
+        List<String> inferredEffectNames = toNameList(new ArrayList<>(inferredEffectIds), effectNameById, 10);
+
+        List<String> chains = new ArrayList<>();
+        for (RelIngredientEffect rel : ingredientEffects) {
+            if (rel == null || rel.getIngredientId() == null || rel.getEffectId() == null) {
+                continue;
+            }
+            String ingredientName = ingredientNameById.getOrDefault(rel.getIngredientId(), "INGREDIENT:" + rel.getIngredientId());
+            String effectName = effectNameById.getOrDefault(rel.getEffectId(), "EFFECT:" + rel.getEffectId());
+            chains.add(product.getName() + " -> " + ingredientName + " -> " + effectName);
+            if (chains.size() >= 8) {
+                break;
+            }
+        }
+
+        int evidenceCount = 0;
+        for (RelProductIngredient rel : productIngredients) {
+            if (rel == null || rel.getIngredientId() == null) {
+                continue;
+            }
+            evidenceCount += countEvidence("PRODUCT_CONTAINS_INGREDIENT", "PRODUCT", productId, "INGREDIENT", rel.getIngredientId());
+        }
+        for (RelIngredientEffect rel : ingredientEffects) {
+            if (rel == null || rel.getIngredientId() == null || rel.getEffectId() == null) {
+                continue;
+            }
+            evidenceCount += countEvidence("INGREDIENT_HAS_EFFECT", "INGREDIENT", rel.getIngredientId(), "EFFECT", rel.getEffectId());
+        }
+        for (RelProductEffect rel : productEffects) {
+            if (rel == null || rel.getEffectId() == null) {
+                continue;
+            }
+            evidenceCount += countEvidence("PRODUCT_TARGETS_EFFECT", "PRODUCT", productId, "EFFECT", rel.getEffectId());
+        }
+
+        String summary = "产品「" + product.getName() + "」已关联成分 " + ingredientIdSet.size()
+                + " 个，功效 " + allEffectIds.size() + " 个（直连 " + directEffectIds.size() + "，推导 "
+                + inferredEffectIds.size() + "），证据 " + evidenceCount + " 条。";
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("productId", product.getId());
+        result.put("productName", product.getName());
+        result.put("ingredientCount", ingredientIdSet.size());
+        result.put("effectCount", allEffectIds.size());
+        result.put("directEffectCount", directEffectIds.size());
+        result.put("inferredEffectCount", inferredEffectIds.size());
+        result.put("evidenceCount", evidenceCount);
+        result.put("ingredients", ingredientNames);
+        result.put("directEffects", directEffectNames);
+        result.put("inferredEffects", inferredEffectNames);
+        result.put("chains", chains);
+        result.put("summary", summary);
+        return result;
+    }
+
     private String extractUploadText(MultipartFile file) {
         try {
             byte[] bytes = file.getBytes();
@@ -310,6 +483,152 @@ public class ChatService {
             }
             throw new BusinessException(ErrorCode.BAD_REQUEST, "鏂囦欢瑙ｆ瀽澶辫触");
         }
+    }
+
+    private String buildKgInsightContext(String question) {
+        if (!StringUtils.hasText(question)) {
+            return "";
+        }
+        try {
+            BeautyProduct product = matchProductFromQuestion(question);
+            if (product == null || product.getId() == null) {
+                return "";
+            }
+            Map<String, Object> insight = productInsight(product.getId());
+            String summary = String.valueOf(insight.getOrDefault("summary", ""));
+            String ingredients = joinList(insight.get("ingredients"), 6);
+            String directEffects = joinList(insight.get("directEffects"), 6);
+            String inferredEffects = joinList(insight.get("inferredEffects"), 8);
+            String chains = joinList(insight.get("chains"), 6);
+            return "Product: " + product.getName()
+                    + "\nSummary: " + summary
+                    + "\nCore ingredients: " + ingredients
+                    + "\nDirect effects: " + directEffects
+                    + "\nInferred effects: " + inferredEffects
+                    + "\nKey paths: " + chains;
+        } catch (Exception ignore) {
+            return "";
+        }
+    }
+
+    private String buildKgInsightSummary(String question) {
+        if (!StringUtils.hasText(question)) {
+            return "";
+        }
+        try {
+            BeautyProduct product = matchProductFromQuestion(question);
+            if (product == null || product.getId() == null) {
+                return "";
+            }
+            Map<String, Object> insight = productInsight(product.getId());
+            int ingredientCount = toInt(insight.get("ingredientCount"));
+            int effectCount = toInt(insight.get("effectCount"));
+            int evidenceCount = toInt(insight.get("evidenceCount"));
+            return "产品「" + product.getName() + "」关联成分 " + ingredientCount
+                    + " 个，功效 " + effectCount + " 个，证据 " + evidenceCount + " 条。";
+        } catch (Exception ignore) {
+            return "";
+        }
+    }
+
+    private BeautyProduct matchProductFromQuestion(String question) {
+        String q = question.toLowerCase();
+        String normalizedQ = normalizeProductKey(q);
+        List<BeautyProduct> products = beautyProductMapper.selectList(new LambdaQueryWrapper<BeautyProduct>()
+                .eq(BeautyProduct::getStatus, 1)
+                .select(BeautyProduct::getId, BeautyProduct::getName));
+        BeautyProduct best = null;
+        int bestLen = 0;
+        for (BeautyProduct p : products) {
+            if (p == null || !StringUtils.hasText(p.getName())) {
+                continue;
+            }
+            String name = p.getName().toLowerCase();
+            String normalizedName = normalizeProductKey(name);
+            boolean hit = q.contains(name) || (!normalizedName.isBlank() && normalizedQ.contains(normalizedName));
+            if (hit && normalizedName.length() > bestLen) {
+                best = p;
+                bestLen = normalizedName.length();
+            }
+        }
+        return best;
+    }
+
+    private int countEvidence(String relationType, String subjectType, Long subjectId, String objectType, Long objectId) {
+        if (subjectId == null || objectId == null) {
+            return 0;
+        }
+        Long cnt = kgEvidenceMapper.selectCount(new LambdaQueryWrapper<KgEvidence>()
+                .eq(KgEvidence::getRelationType, relationType)
+                .eq(KgEvidence::getSubjectType, subjectType)
+                .eq(KgEvidence::getSubjectId, subjectId)
+                .eq(KgEvidence::getObjectType, objectType)
+                .eq(KgEvidence::getObjectId, objectId));
+        return cnt == null ? 0 : cnt.intValue();
+    }
+
+    private List<String> toNameList(List<Long> ids, Map<Long, String> nameById, int limit) {
+        List<String> out = new ArrayList<>();
+        if (ids == null || ids.isEmpty()) {
+            return out;
+        }
+        int max = Math.max(1, limit);
+        for (Long id : ids) {
+            if (id == null) {
+                continue;
+            }
+            String name = nameById.get(id);
+            if (!StringUtils.hasText(name)) {
+                continue;
+            }
+            out.add(name);
+            if (out.size() >= max) {
+                break;
+            }
+        }
+        return out;
+    }
+
+    private String joinList(Object raw, int limit) {
+        if (!(raw instanceof List<?> list) || list.isEmpty()) {
+            return "N/A";
+        }
+        List<String> out = new ArrayList<>();
+        int max = Math.max(1, limit);
+        for (Object item : list) {
+            if (item == null) {
+                continue;
+            }
+            out.add(String.valueOf(item));
+            if (out.size() >= max) {
+                break;
+            }
+        }
+        return out.isEmpty() ? "N/A" : String.join(" | ", out);
+    }
+
+    private int toInt(Object raw) {
+        if (raw == null) {
+            return 0;
+        }
+        if (raw instanceof Number n) {
+            return n.intValue();
+        }
+        try {
+            return Integer.parseInt(String.valueOf(raw));
+        } catch (Exception ignore) {
+            return 0;
+        }
+    }
+
+    private String normalizeProductKey(String text) {
+        if (!StringUtils.hasText(text)) {
+            return "";
+        }
+        return text.toLowerCase()
+                .replace("＋", "+")
+                .replaceAll("[\\s\\-_/·•,，。！？!?:：;；()（）\\[\\]{}]+", "")
+                .trim();
     }
 
     private boolean isImage(MultipartFile file) {

@@ -100,6 +100,12 @@ public class ChatController {
         ));
     }
 
+    @Operation(summary = "Product graph insight")
+    @GetMapping("/insight/product/{productId}")
+    public Result<Map<String, Object>> productInsight(@PathVariable Long productId) {
+        return Result.success(chatService.productInsight(productId));
+    }
+
     private Flux<ServerSentEvent<ChatStreamChunk>> streamInternal(ChatRequest request) {
         Long userId = SecurityUtil.getCurrentUserId();
         return chatService.streamChat(userId, request)
