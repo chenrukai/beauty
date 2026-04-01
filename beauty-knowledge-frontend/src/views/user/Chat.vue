@@ -97,12 +97,13 @@
             ref="fileInputRef"
             class="file-input"
             type="file"
+            multiple
             accept=".txt,.md,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg,.webp,.bmp,.gif,.mp4,.mov,.avi,.mkv,.webm,.m4v"
-            @change="onPickFile"
+            @change="onPickFiles"
           />
           <el-button plain @click="triggerFilePick">上传文件（文档/图片/视频）</el-button>
           <span class="file-text">{{ selectedFileName }}</span>
-          <el-button v-if="attachedFile" text type="danger" @click="clearFile">移除</el-button>
+          <el-button v-if="attachedFiles.length" text type="danger" @click="clearFile">移除</el-button>
         </div>
         <el-button type="primary" :loading="chat.isStreaming || summarizing" @click="ask">发送</el-button>
       </div>
@@ -128,7 +129,7 @@ const configuredBaseURL = import.meta.env.VITE_API_BASE_URL?.trim()
 const apiBaseURL = configuredBaseURL || 'http://127.0.0.1:8080/api'
 const question = ref('')
 const fileInputRef = ref<HTMLInputElement | null>(null)
-const attachedFile = ref<File | null>(null)
+const attachedFiles = ref<File[]>([])
 const summarizing = ref(false)
 const documentModeSession = ref<number | null>(null)
 const documentModeFileName = ref('')
@@ -158,7 +159,12 @@ const quickQuestions = [
   '痘印和暗沉分别怎么处理？'
 ]
 
-const selectedFileName = computed(() => attachedFile.value?.name || '未选择文件')
+const selectedFileName = computed(() => {
+  if (!attachedFiles.value.length) return '未选择文件'
+  if (attachedFiles.value.length === 1) return attachedFiles.value[0].name
+  const first = attachedFiles.value.slice(0, 2).map((f) => f.name).join('、')
+  return `${attachedFiles.value.length}个文件：${first}${attachedFiles.value.length > 2 ? '...' : ''}`
+})
 
 watch(
   () => route.query.q,
@@ -178,8 +184,8 @@ async function ask() {
   const q = question.value.trim() || '总结这个文件的内容'
   if (chat.isStreaming || summarizing.value) return
   await recordAction('search', { keyword: q, targetType: 'knowledge', source: 'chat' })
-  if (attachedFile.value) {
-    await askWithUpload(q)
+  if (attachedFiles.value.length) {
+    await askWithUploads(q)
     question.value = ''
     clearFile()
     return
@@ -209,16 +215,25 @@ function triggerFilePick() {
   fileInputRef.value?.click()
 }
 
-async function onPickFile(e: Event) {
+async function onPickFiles(e: Event) {
   const input = e.target as HTMLInputElement
-  const f = input.files?.[0] || null
-  attachedFile.value = f
-  if (!f) return
-  await recordAction('upload', { targetType: 'chat', source: 'chat', extra: f.name })
+  const picked = Array.from(input.files || [])
+  if (!picked.length) return
+  const merged = [...attachedFiles.value]
+  const exists = new Set(merged.map((f) => `${f.name}#${f.size}#${f.lastModified}`))
+  for (const f of picked) {
+    const key = `${f.name}#${f.size}#${f.lastModified}`
+    if (!exists.has(key)) {
+      merged.push(f)
+      exists.add(key)
+    }
+  }
+  attachedFiles.value = merged
+  await recordAction('upload', { targetType: 'chat', source: 'chat', extra: picked.map((f) => f.name).join(',') })
 }
 
 function clearFile() {
-  attachedFile.value = null
+  attachedFiles.value = []
   if (fileInputRef.value) fileInputRef.value.value = ''
 }
 
@@ -230,32 +245,38 @@ function normalizeUploadErrorMessage(message: string) {
     .replace(/^TRANSCRIBE_UNAVAILABLE:\s*/i, '')
 }
 
-async function askWithUpload(q: string) {
-  if (!attachedFile.value) return
-  const displayQuestion = `${q}\n\n[已上传附件：${attachedFile.value.name}（${formatFileSize(attachedFile.value.size)}）]`
+async function askWithUploads(q: string) {
+  if (!attachedFiles.value.length) return
+  const lines = attachedFiles.value.map((f) => `- ${f.name}（${formatFileSize(f.size)}）`)
+  const displayQuestion = `${q}\n\n[已上传附件]\n${lines.join('\n')}`
   chat.messages.push({ role: 'user', content: displayQuestion })
   chat.messages.push({ role: 'assistant', content: '' })
   summarizing.value = true
   try {
-    const fd = new FormData()
-    fd.append('file', attachedFile.value)
-    fd.append('instruction', q)
-    if (chat.currentSessionId) {
-      fd.append('sessionId', String(chat.currentSessionId))
-    }
-    const res = await request.post('/chat/summarize-upload', fd, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-    const summary = String(res.data?.summary || '').trim()
-    const sid = Number(res.data?.sessionId || 0)
-    if (sid > 0) {
-      chat.currentSessionId = sid
-      documentModeSession.value = sid
-      documentModeFileName.value = attachedFile.value?.name || ''
+    const chunks: string[] = []
+    for (let i = 0; i < attachedFiles.value.length; i++) {
+      const f = attachedFiles.value[i]
+      const fd = new FormData()
+      fd.append('file', f)
+      fd.append('instruction', `${q}（附件${i + 1}/${attachedFiles.value.length}：${f.name}）`)
+      if (chat.currentSessionId) {
+        fd.append('sessionId', String(chat.currentSessionId))
+      }
+      const res = await request.post('/chat/summarize-upload', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      const summary = String(res.data?.summary || '').trim()
+      const sid = Number(res.data?.sessionId || 0)
+      if (sid > 0) {
+        chat.currentSessionId = sid
+        documentModeSession.value = sid
+        documentModeFileName.value = f.name
+      }
+      chunks.push(`【${f.name}】\n${summary || 'AI service is unavailable. Please try again later.'}`)
     }
     const last = chat.messages[chat.messages.length - 1]
     if (last && last.role === 'assistant') {
-      last.content = summary || 'AI service is unavailable. Please try again later.'
+      last.content = chunks.join('\n\n')
     }
     await chat.fetchSessions()
   } catch (e: any) {
@@ -318,7 +339,7 @@ function formatFileSize(size: number) {
 
 function hasUploadedAttachment(content: string) {
   if (!content) return false
-  return /\[已上传附件：.+\]/.test(content)
+  return /\[已上传附件/.test(content)
 }
 
 async function openSessionAttachment() {

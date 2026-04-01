@@ -198,7 +198,7 @@ public class ChatService {
             throw new BusinessException(ErrorCode.AI_SERVICE_UNAVAILABLE, "鏈壘鍒板彲鐢ㄧ殑LLMProvider");
         }
 
-        String extractedText = extractUploadText(file);
+        String extractedText = dedupeTranscriptText(extractUploadText(file));
         if (!StringUtils.hasText(extractedText)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "文件内容为空或无法解析");
         }
@@ -247,7 +247,7 @@ public class ChatService {
         if (isRefusalLike(rawAnswer)) {
             rawAnswer = fallbackSummaryFromText(clipped, fileName);
         }
-        String finalAnswer = enforcePriceFactConsistency(rawAnswer, facts);
+        String finalAnswer = dedupeAnswerParagraphs(enforcePriceFactConsistency(rawAnswer, facts));
         chatRecordService.saveAssistantAnswer(sid, finalAnswer, List.of());
         contextService.appendRound(userId, userQuestion, finalAnswer);
         return new UploadSummaryResult(sid, finalAnswer, fileName);
@@ -297,7 +297,7 @@ public class ChatService {
         if (isRefusalLike(rawAnswer)) {
             rawAnswer = fallbackQaFromText(cleanQuestion, clipped, ctx.fileName());
         }
-        String finalAnswer = enforcePriceFactConsistency(rawAnswer, facts);
+        String finalAnswer = dedupeAnswerParagraphs(enforcePriceFactConsistency(rawAnswer, facts));
         chatRecordService.saveAssistantAnswer(sessionId, finalAnswer, List.of());
         contextService.appendRound(userId, userQuestion, finalAnswer);
         return new UploadAskResult(sessionId, finalAnswer, ctx.fileName());
@@ -986,6 +986,52 @@ public class ChatService {
     private String fallbackQaFromText(String question, String clipped, String fileName) {
         String summary = fallbackSummaryFromText(clipped, fileName);
         return "基于附件内容回答：\n问题：" + question + "\n" + summary;
+    }
+
+    private String dedupeTranscriptText(String text) {
+        if (!StringUtils.hasText(text)) {
+            return text;
+        }
+        String normalized = text.replace("\r", "\n").trim();
+        String[] lines = normalized.split("\n+");
+        List<String> out = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (String raw : lines) {
+            String line = raw == null ? "" : raw.trim();
+            if (line.length() < 2) {
+                continue;
+            }
+            String key = line.toLowerCase().replaceAll("\\s+", "");
+            // Very short repeated patterns from ASR often carry little meaning.
+            if (key.length() >= 8 && seen.contains(key)) {
+                continue;
+            }
+            seen.add(key);
+            out.add(line);
+        }
+        return String.join("\n", out);
+    }
+
+    private String dedupeAnswerParagraphs(String text) {
+        if (!StringUtils.hasText(text)) {
+            return text;
+        }
+        String[] parts = text.replace("\r", "\n").split("\n+");
+        List<String> out = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (String raw : parts) {
+            String p = raw == null ? "" : raw.trim();
+            if (p.isBlank()) {
+                continue;
+            }
+            String key = p.toLowerCase().replaceAll("[\\s\\p{Punct}，。！？、；：“”‘’（）()\\-]+", "");
+            if (key.length() >= 10 && seen.contains(key)) {
+                continue;
+            }
+            seen.add(key);
+            out.add(p);
+        }
+        return String.join("\n", out);
     }
 
     private String toPlainText(String raw) {
