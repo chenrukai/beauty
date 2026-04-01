@@ -328,7 +328,21 @@ async function openSessionAttachment() {
   }
   try {
     const token = auth.token || localStorage.getItem('bk_token') || ''
-    const resp = await fetch(`${apiBaseURL}/chat/session/${chat.currentSessionId}/attachment`, {
+    const listRes = await request.get(`/chat/session/${chat.currentSessionId}/attachments`)
+    const list = Array.isArray(listRes?.data) ? listRes.data : []
+    let q = ''
+    if (list.length > 1) {
+      const options = list.map((it: any) => `${it.index}: ${it.fileName}`).join('\n')
+      const picked = window.prompt(`当前会话有多个附件，请输入要打开的序号：\n${options}`, '0')
+      if (picked === null) return
+      const n = Number(picked)
+      if (Number.isNaN(n) || n < 0 || n >= list.length) {
+        ElMessage.warning('附件序号无效')
+        return
+      }
+      q = `?index=${n}`
+    }
+    const resp = await fetch(`${apiBaseURL}/chat/session/${chat.currentSessionId}/attachment${q}`, {
       method: 'GET',
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     })

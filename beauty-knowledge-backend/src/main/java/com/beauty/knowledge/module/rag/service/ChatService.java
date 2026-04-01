@@ -23,8 +23,10 @@ import com.beauty.knowledge.module.rag.domain.dto.ChatMessage;
 import com.beauty.knowledge.module.rag.domain.dto.ChatRequest;
 import com.beauty.knowledge.module.rag.domain.dto.ChatStreamChunk;
 import com.beauty.knowledge.module.rag.domain.dto.ChunkResult;
+import com.beauty.knowledge.module.rag.domain.entity.ChatAttachment;
 import com.beauty.knowledge.module.rag.domain.entity.ChatMessageEntity;
 import com.beauty.knowledge.module.rag.domain.entity.ChatSession;
+import com.beauty.knowledge.module.rag.mapper.ChatAttachmentMapper;
 import com.beauty.knowledge.module.rag.domain.enums.IntentType;
 import com.beauty.knowledge.module.rag.mapper.KbChunkSearchMapper;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +35,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.jdbc.core.JdbcTemplate;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -75,6 +78,8 @@ public class ChatService {
     private final RelIngredientEffectMapper relIngredientEffectMapper;
     private final RelProductEffectMapper relProductEffectMapper;
     private final KgEvidenceMapper kgEvidenceMapper;
+    private final ChatAttachmentMapper chatAttachmentMapper;
+    private final JdbcTemplate jdbcTemplate;
     private final Tika tika = new Tika();
 
     @Value("${beauty.rag.display-source-top:4}")
@@ -88,7 +93,7 @@ public class ChatService {
     @Value("${beauty.rag.upload-ask-max-chars:24000}")
     private int uploadAskMaxChars;
 
-    private final Map<Long, UploadContext> uploadContextBySession = new ConcurrentHashMap<>();
+    private final Map<Long, List<UploadContext>> uploadContextBySession = new ConcurrentHashMap<>();
     private static final Pattern MONEY_PATTERN = Pattern.compile("(?<!\\d)(\\d{3,6})(?:\\.\\d{1,2})?(?!\\d)");
 
     public Flux<ChatStreamChunk> streamChat(Long userId, ChatRequest request) {
@@ -184,6 +189,7 @@ public class ChatService {
     }
 
     public UploadSummaryResult summarizeUpload(Long userId, MultipartFile file, String instruction, Long sessionId) {
+        ensureAttachmentTableReady();
         if (file == null || file.isEmpty()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "涓婁紶鏂囦欢涓嶈兘涓虹┖");
         }
@@ -213,13 +219,14 @@ public class ChatService {
                 ? instruction.trim()
                 : "璇锋€荤粨杩欎釜鏂囦欢鍐呭";
         Long sid = chatSessionService.getOrCreate(userId, sessionId, finalInstruction);
-        uploadContextBySession.put(sid, new UploadContext(
+        appendUploadContext(sid, new UploadContext(
                 fileName,
                 extractedText,
                 facts,
                 minioPath,
                 contentType
         ));
+        saveAttachmentMeta(sid, userId, fileName, minioPath, contentType);
         String userQuestion = finalInstruction + "（附件：" + fileName + "）";
         chatRecordService.saveUserQuestion(sid, userQuestion);
 
@@ -230,9 +237,16 @@ public class ChatService {
                 + renderPriceFactsForPrompt(facts)
                 + "\n\n銆愭枃浠跺唴瀹广€慭n" + clipped;
         String answer = llmProvider.chatAsync(systemPrompt, userPrompt).block();
+        if (isRefusalLike(answer)) {
+            String retryPrompt = systemPrompt + "\n请不要拒答；仅基于附件文本给出摘要。若信息不足请明确写“信息不足”。";
+            answer = llmProvider.chatAsync(retryPrompt, userPrompt).block();
+        }
         String rawAnswer = StringUtils.hasText(answer)
                 ? toPlainText(answer)
                 : "AI service is temporarily unavailable. Please check Ollama/model configuration and try again.";
+        if (isRefusalLike(rawAnswer)) {
+            rawAnswer = fallbackSummaryFromText(clipped, fileName);
+        }
         String finalAnswer = enforcePriceFactConsistency(rawAnswer, facts);
         chatRecordService.saveAssistantAnswer(sid, finalAnswer, List.of());
         contextService.appendRound(userId, userQuestion, finalAnswer);
@@ -240,6 +254,7 @@ public class ChatService {
     }
 
     public UploadAskResult askByUploadedDocument(Long userId, Long sessionId, String question) {
+        ensureAttachmentTableReady();
         if (sessionId == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "sessionId涓嶈兘涓虹┖");
         }
@@ -247,7 +262,7 @@ public class ChatService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "闂涓嶈兘涓虹┖");
         }
         ensureSessionOwned(userId, sessionId);
-        UploadContext ctx = uploadContextBySession.get(sessionId);
+        UploadContext ctx = getLatestUploadContext(sessionId);
         if (ctx == null || !StringUtils.hasText(ctx.content())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "褰撳墠浼氳瘽娌℃湁涓婁紶鏂囦欢涓婁笅鏂囷紝璇峰厛涓婁紶鏂囦欢");
         }
@@ -272,27 +287,89 @@ public class ChatService {
                 + renderPriceFactsForPrompt(facts)
                 + "\n\n銆愭枃浠跺唴瀹广€慭n" + clipped;
         String answer = llmProvider.chatAsync(systemPrompt, userPrompt).block();
+        if (isRefusalLike(answer)) {
+            String retryPrompt = systemPrompt + "\n请不要拒答；仅基于附件文本回答问题。若信息不足请明确写“信息不足”。";
+            answer = llmProvider.chatAsync(retryPrompt, userPrompt).block();
+        }
         String rawAnswer = StringUtils.hasText(answer)
                 ? toPlainText(answer)
                 : "AI service is temporarily unavailable. Please check Ollama/model configuration and try again.";
+        if (isRefusalLike(rawAnswer)) {
+            rawAnswer = fallbackQaFromText(cleanQuestion, clipped, ctx.fileName());
+        }
         String finalAnswer = enforcePriceFactConsistency(rawAnswer, facts);
         chatRecordService.saveAssistantAnswer(sessionId, finalAnswer, List.of());
         contextService.appendRound(userId, userQuestion, finalAnswer);
         return new UploadAskResult(sessionId, finalAnswer, ctx.fileName());
     }
 
-    public UploadAttachment getSessionAttachment(Long userId, Long sessionId) {
+    public UploadAttachment getSessionAttachment(Long userId, Long sessionId, Integer index) {
+        ensureAttachmentTableReady();
         if (sessionId == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "sessionId is required");
         }
         ensureSessionOwned(userId, sessionId);
-        UploadContext ctx = uploadContextBySession.get(sessionId);
+        List<ChatAttachment> rows = chatAttachmentMapper.selectList(new LambdaQueryWrapper<ChatAttachment>()
+                .eq(ChatAttachment::getSessionId, sessionId)
+                .eq(ChatAttachment::getUserId, userId)
+                .eq(ChatAttachment::getStatus, 1)
+                .orderByDesc(ChatAttachment::getId));
+        if (rows != null && !rows.isEmpty()) {
+            int i = index == null ? 0 : Math.max(0, index);
+            if (i >= rows.size()) {
+                i = rows.size() - 1;
+            }
+            ChatAttachment row = rows.get(i);
+            byte[] bytes = minioStorageService.download(row.getMinioPath());
+            String contentType = StringUtils.hasText(row.getContentType()) ? row.getContentType() : "application/octet-stream";
+            return new UploadAttachment(row.getFileName(), contentType, bytes);
+        }
+        UploadContext ctx = getUploadContextByIndex(sessionId, index);
         if (ctx == null || !StringUtils.hasText(ctx.minioPath())) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "No upload attachment found for this session");
         }
         byte[] bytes = minioStorageService.download(ctx.minioPath());
         String contentType = StringUtils.hasText(ctx.contentType()) ? ctx.contentType() : "application/octet-stream";
         return new UploadAttachment(ctx.fileName(), contentType, bytes);
+    }
+
+    public List<Map<String, Object>> listSessionAttachments(Long userId, Long sessionId) {
+        ensureAttachmentTableReady();
+        if (sessionId == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "sessionId is required");
+        }
+        ensureSessionOwned(userId, sessionId);
+        List<ChatAttachment> rows = chatAttachmentMapper.selectList(new LambdaQueryWrapper<ChatAttachment>()
+                .eq(ChatAttachment::getSessionId, sessionId)
+                .eq(ChatAttachment::getUserId, userId)
+                .eq(ChatAttachment::getStatus, 1)
+                .orderByDesc(ChatAttachment::getId));
+        if (rows != null && !rows.isEmpty()) {
+            List<Map<String, Object>> out = new ArrayList<>();
+            for (int i = 0; i < rows.size(); i++) {
+                ChatAttachment row = rows.get(i);
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("index", i);
+                item.put("fileName", row.getFileName());
+                item.put("contentType", row.getContentType());
+                out.add(item);
+            }
+            return out;
+        }
+        List<UploadContext> list = uploadContextBySession.getOrDefault(sessionId, List.of());
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (int i = 0; i < list.size(); i++) {
+            UploadContext ctx = list.get(i);
+            if (ctx == null) {
+                continue;
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("index", i);
+            row.put("fileName", ctx.fileName());
+            row.put("contentType", ctx.contentType());
+            out.add(row);
+        }
+        return out;
     }
 
     public Map<String, Object> productInsight(Long productId) {
@@ -794,6 +871,121 @@ public class ChatService {
             sb.append("\n\n补充：已自动忽略与上述价格事实不一致的数字描述。");
         }
         return sb.toString();
+    }
+
+    private void ensureAttachmentTableReady() {
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS chat_attachment (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    session_id BIGINT NOT NULL,
+                    user_id BIGINT NOT NULL,
+                    file_name VARCHAR(255) NOT NULL,
+                    minio_path VARCHAR(500) NOT NULL,
+                    content_type VARCHAR(120) DEFAULT NULL,
+                    status TINYINT NOT NULL DEFAULT 1,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id),
+                    KEY idx_session_created (session_id, created_at),
+                    KEY idx_user_session (user_id, session_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """);
+    }
+
+    private void saveAttachmentMeta(Long sessionId, Long userId, String fileName, String minioPath, String contentType) {
+        if (sessionId == null || userId == null || !StringUtils.hasText(minioPath) || !StringUtils.hasText(fileName)) {
+            return;
+        }
+        ChatAttachment row = new ChatAttachment();
+        row.setSessionId(sessionId);
+        row.setUserId(userId);
+        row.setFileName(fileName);
+        row.setMinioPath(minioPath);
+        row.setContentType(contentType);
+        row.setStatus(1);
+        chatAttachmentMapper.insert(row);
+    }
+
+    private void appendUploadContext(Long sessionId, UploadContext ctx) {
+        if (sessionId == null || ctx == null) {
+            return;
+        }
+        uploadContextBySession.compute(sessionId, (k, old) -> {
+            List<UploadContext> list = old == null ? new ArrayList<>() : new ArrayList<>(old);
+            list.add(ctx);
+            int maxKeep = 5;
+            while (list.size() > maxKeep) {
+                list.remove(0);
+            }
+            return list;
+        });
+    }
+
+    private UploadContext getLatestUploadContext(Long sessionId) {
+        if (sessionId == null) {
+            return null;
+        }
+        List<UploadContext> list = uploadContextBySession.get(sessionId);
+        if (list == null || list.isEmpty()) {
+            return null;
+        }
+        return list.get(list.size() - 1);
+    }
+
+    private UploadContext getUploadContextByIndex(Long sessionId, Integer index) {
+        List<UploadContext> list = uploadContextBySession.get(sessionId);
+        if (list == null || list.isEmpty()) {
+            return null;
+        }
+        if (index == null) {
+            return list.get(list.size() - 1);
+        }
+        int i = Math.max(0, index);
+        if (i >= list.size()) {
+            i = list.size() - 1;
+        }
+        return list.get(i);
+    }
+
+    private boolean isRefusalLike(String text) {
+        if (!StringUtils.hasText(text)) {
+            return true;
+        }
+        String s = text.toLowerCase();
+        return s.contains("无法提供")
+                || s.contains("无法分享")
+                || s.contains("不能提供")
+                || s.contains("cannot provide")
+                || s.contains("sorry, i can't");
+    }
+
+    private String fallbackSummaryFromText(String clipped, String fileName) {
+        String text = StringUtils.hasText(clipped) ? clipped.replace('\r', '\n').trim() : "";
+        if (!StringUtils.hasText(text)) {
+            return "已接收附件「" + fileName + "」，但可解析文本不足，建议上传更清晰的文本/字幕后重试。";
+        }
+        String[] parts = text.split("[\\n。！？!?]");
+        List<String> bullets = new ArrayList<>();
+        for (String part : parts) {
+            String line = part == null ? "" : part.trim();
+            if (line.length() < 8) {
+                continue;
+            }
+            bullets.add(line);
+            if (bullets.size() >= 3) {
+                break;
+            }
+        }
+        if (bullets.isEmpty()) {
+            return "已基于附件「" + fileName + "」完成解析，但有效文本较少，建议补充更完整内容后再总结。";
+        }
+        return "附件「" + fileName + "」摘要：\n1. " + bullets.get(0)
+                + (bullets.size() > 1 ? "\n2. " + bullets.get(1) : "")
+                + (bullets.size() > 2 ? "\n3. " + bullets.get(2) : "");
+    }
+
+    private String fallbackQaFromText(String question, String clipped, String fileName) {
+        String summary = fallbackSummaryFromText(clipped, fileName);
+        return "基于附件内容回答：\n问题：" + question + "\n" + summary;
     }
 
     private String toPlainText(String raw) {

@@ -69,9 +69,10 @@ public class ChatController {
 
     @Operation(summary = "打开会话最近上传的附件")
     @GetMapping("/session/{sessionId}/attachment")
-    public ResponseEntity<byte[]> openAttachment(@PathVariable Long sessionId) {
+    public ResponseEntity<byte[]> openAttachment(@PathVariable Long sessionId,
+                                                 @RequestParam(value = "index", required = false) Integer index) {
         Long userId = SecurityUtil.getCurrentUserId();
-        ChatService.UploadAttachment attachment = chatService.getSessionAttachment(userId, sessionId);
+        ChatService.UploadAttachment attachment = chatService.getSessionAttachment(userId, sessionId, index);
         MediaType mediaType = MediaType.APPLICATION_OCTET_STREAM;
         try {
             mediaType = MediaType.parseMediaType(attachment.contentType());
@@ -85,6 +86,13 @@ public class ChatController {
         return ResponseEntity.ok()
                 .headers(headers)
                 .body(attachment.bytes());
+    }
+
+    @Operation(summary = "List session attachments")
+    @GetMapping("/session/{sessionId}/attachments")
+    public Result<List<Map<String, Object>>> listAttachments(@PathVariable Long sessionId) {
+        Long userId = SecurityUtil.getCurrentUserId();
+        return Result.success(chatService.listSessionAttachments(userId, sessionId));
     }
 
     @Operation(summary = "基于已上传文件继续提问")
