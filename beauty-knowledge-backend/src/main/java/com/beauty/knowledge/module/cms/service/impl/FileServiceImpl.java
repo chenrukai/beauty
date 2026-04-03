@@ -13,6 +13,7 @@ import com.beauty.knowledge.module.cms.domain.entity.KbCategory;
 import com.beauty.knowledge.module.cms.domain.entity.KbFile;
 import com.beauty.knowledge.module.cms.domain.entity.KbKnowledge;
 import com.beauty.knowledge.module.cms.domain.entity.ProcessTask;
+import com.beauty.knowledge.module.cms.domain.vo.FileBinaryVO;
 import com.beauty.knowledge.module.cms.domain.vo.FileUploadVO;
 import com.beauty.knowledge.module.cms.domain.vo.ProcessTaskViewVO;
 import com.beauty.knowledge.module.cms.mapper.KbChunkMapper;
@@ -36,6 +37,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Locale;
 
 @Service
 @Slf4j
@@ -218,6 +220,37 @@ public class FileServiceImpl implements FileService {
                 .retryCount(1)
                 .build();
         rabbitTemplate.convertAndSend(RabbitMQConstant.PROCESS_EXCHANGE, RabbitMQConstant.PROCESS_ROUTING_KEY, msg);
+    }
+
+    @Override
+    public FileBinaryVO openFile(Long fileId) {
+        if (fileId == null || fileId <= 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "fileId is required");
+        }
+        KbFile file = kbFileMapper.selectById(fileId);
+        if (file == null || Integer.valueOf(1).equals(file.getIsDeleted())) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "file not found");
+        }
+        KbKnowledge knowledge = file.getKnowledgeId() == null ? null : kbKnowledgeMapper.selectById(file.getKnowledgeId());
+        if (knowledge == null || Integer.valueOf(1).equals(knowledge.getIsDeleted())) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "knowledge not found");
+        }
+        // Normal users can only preview published knowledge attachments.
+        if (!SecurityUtil.isAdmin() && !Integer.valueOf(1).equals(knowledge.getStatus())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "file is not accessible");
+        }
+        if (!StringUtils.hasText(file.getMinioPath())) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "file storage path is missing");
+        }
+        byte[] bytes;
+        try {
+            bytes = minioStorageService.download(file.getMinioPath());
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "file binary not found");
+        }
+        String fileName = StringUtils.hasText(file.getOriginalName()) ? file.getOriginalName() : ("file-" + file.getId());
+        String contentType = detectContentTypeByName(fileName);
+        return new FileBinaryVO(fileName, contentType, bytes);
     }
 
     @Override
@@ -500,6 +533,36 @@ public class FileServiceImpl implements FileService {
                 || "DOC_EXCEL".equals(type)
                 || "TEXT_TXT".equals(type)
                 || "TEXT_MD".equals(type);
+    }
+
+    private String detectContentTypeByName(String fileName) {
+        if (!StringUtils.hasText(fileName)) {
+            return "application/octet-stream";
+        }
+        String lower = fileName.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".pdf")) return "application/pdf";
+        if (lower.endsWith(".txt")) return "text/plain; charset=UTF-8";
+        if (lower.endsWith(".md")) return "text/markdown; charset=UTF-8";
+        if (lower.endsWith(".csv")) return "text/csv; charset=UTF-8";
+        if (lower.endsWith(".json")) return "application/json; charset=UTF-8";
+        if (lower.endsWith(".doc")) return "application/msword";
+        if (lower.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        if (lower.endsWith(".ppt")) return "application/vnd.ms-powerpoint";
+        if (lower.endsWith(".pptx")) return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+        if (lower.endsWith(".xls")) return "application/vnd.ms-excel";
+        if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        if (lower.endsWith(".png")) return "image/png";
+        if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+        if (lower.endsWith(".webp")) return "image/webp";
+        if (lower.endsWith(".bmp")) return "image/bmp";
+        if (lower.endsWith(".gif")) return "image/gif";
+        if (lower.endsWith(".mp4")) return "video/mp4";
+        if (lower.endsWith(".mov")) return "video/quicktime";
+        if (lower.endsWith(".avi")) return "video/x-msvideo";
+        if (lower.endsWith(".mkv")) return "video/x-matroska";
+        if (lower.endsWith(".webm")) return "video/webm";
+        if (lower.endsWith(".m4v")) return "video/x-m4v";
+        return "application/octet-stream";
     }
 
     private boolean isMediaUploadType(String type) {

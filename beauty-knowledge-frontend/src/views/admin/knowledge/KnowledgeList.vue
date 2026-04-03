@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <el-card class="knowledge-list-page">
     <template #header>知识列表</template>
 
@@ -230,7 +230,6 @@ const flatCategories = computed(() => {
   return out
 })
 
-
 function buildParams(page: number) {
   const params: any = { pageNum: page, pageSize: pageSize.value }
   if (keyword.value) params.keyword = keyword.value
@@ -405,4 +404,3 @@ async function submitCreate() {
   color: var(--app-text);
 }
 </style>
-

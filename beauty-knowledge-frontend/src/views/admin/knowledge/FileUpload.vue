@@ -1,6 +1,6 @@
-<template>
+﻿<template>
   <el-card class="upload-page">
-    <template #header>文件上传与入队</template>
+    <template #header>文件上传与入库</template>
 
     <el-row :gutter="16">
       <el-col :xs="24" :lg="14">
@@ -15,7 +15,7 @@
               <el-option
                 v-for="item in knowledgeOptions"
                 :key="item.id"
-                :label="item.title || `未命名知识${item.id}`"
+                :label="item.title || `未命名知识 ${item.id}`"
                 :value="item.id"
               />
             </el-select>
@@ -84,6 +84,8 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import request from '../../../api/request'
+import { unwrapData } from '../../../api/response'
+import { toUserErrorMessage } from '../../../utils/error-message'
 import { useKnowledgeStore } from '../../../stores/knowledge'
 
 type KnowledgeOption = {
@@ -188,8 +190,9 @@ async function loadAssistData() {
 async function loadTranscribeCapability() {
   try {
     const res = await request.get('/file/capability/transcribe')
-    transcribeAvailable.value = Boolean(res.data?.available)
-    transcribeMessage.value = String(res.data?.message || '')
+    const data = unwrapData<any>(res, {})
+    transcribeAvailable.value = Boolean(data?.available)
+    transcribeMessage.value = String(data?.message || '')
   } catch {
     transcribeAvailable.value = false
     transcribeMessage.value = '转写能力检测失败：请检查后端与 Python transcribe 服务'
@@ -222,10 +225,11 @@ async function upload() {
     const res = await request.post('/file/upload', fd, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
-    lastTaskId.value = Number(res.data.taskId)
-    ElMessage.success(`上传成功，任务ID=${res.data.taskId}`)
+    const data = unwrapData<any>(res, {})
+    lastTaskId.value = Number(data?.taskId || 0)
+    ElMessage.success(`上传成功，任务ID=${data?.taskId}`)
   } catch (e: any) {
-    ElMessage.error(e?.message || '上传失败')
+    ElMessage.error(toUserErrorMessage(e, '上传失败'))
   } finally {
     loading.value = false
   }

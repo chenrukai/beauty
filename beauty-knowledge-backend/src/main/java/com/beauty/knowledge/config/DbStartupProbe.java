@@ -30,6 +30,8 @@ public class DbStartupProbe implements CommandLineRunner {
                 log.warn("DB Probe -> auto chat table creation is enabled. This should be used in dev only.");
             }
 
+            ensureEntityPendingCompatibleColumns();
+
             Map<String, Object> info = jdbcTemplate.queryForMap(
                     "SELECT DATABASE() AS db, @@hostname AS host, @@port AS port, @@version AS version"
             );
@@ -81,5 +83,64 @@ public class DbStartupProbe implements CommandLineRunner {
                     KEY idx_session_created (session_id, created_at)
                 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4
                 """);
+    }
+
+    private void ensureEntityPendingCompatibleColumns() {
+        if (!tableExists("entity_extract_pending")) {
+            return;
+        }
+
+        ensureColumn(
+                "entity_extract_pending",
+                "candidate_type",
+                "ALTER TABLE entity_extract_pending ADD COLUMN candidate_type VARCHAR(20) NOT NULL DEFAULT 'entity' COMMENT 'entity/relation'"
+        );
+        ensureColumn(
+                "entity_extract_pending",
+                "payload_json",
+                "ALTER TABLE entity_extract_pending ADD COLUMN payload_json JSON NULL COMMENT 'normalized payload for relation/entity'"
+        );
+        ensureColumn(
+                "entity_extract_pending",
+                "confidence",
+                "ALTER TABLE entity_extract_pending ADD COLUMN confidence DECIMAL(5,4) NOT NULL DEFAULT 0.7000"
+        );
+        ensureColumn(
+                "entity_extract_pending",
+                "reviewer_id",
+                "ALTER TABLE entity_extract_pending ADD COLUMN reviewer_id BIGINT NULL"
+        );
+        ensureColumn(
+                "entity_extract_pending",
+                "reviewed_at",
+                "ALTER TABLE entity_extract_pending ADD COLUMN reviewed_at DATETIME NULL"
+        );
+        ensureColumn(
+                "entity_extract_pending",
+                "review_comment",
+                "ALTER TABLE entity_extract_pending ADD COLUMN review_comment VARCHAR(255) NULL"
+        );
+    }
+
+    private boolean tableExists(String tableName) {
+        Integer cnt = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?",
+                Integer.class,
+                tableName
+        );
+        return cnt != null && cnt > 0;
+    }
+
+    private void ensureColumn(String tableName, String columnName, String ddl) {
+        Integer cnt = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?",
+                Integer.class,
+                tableName,
+                columnName
+        );
+        if (cnt == null || cnt == 0) {
+            jdbcTemplate.execute(ddl);
+            log.warn("DB Probe -> added missing column {}.{}", tableName, columnName);
+        }
     }
 }

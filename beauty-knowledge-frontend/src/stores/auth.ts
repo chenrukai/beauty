@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import request from '../api/request'
+import { useChatStore } from './chat'
+import { unwrapData } from '../api/response'
 
 interface UserInfo {
   id: number
@@ -18,8 +20,9 @@ export const useAuthStore = defineStore('auth', () => {
   async function login(username: string, password: string) {
     clearAuth()
     const res = await request.post('/auth/login', { username, password })
-    token.value = res.data.token
-    userInfo.value = res.data.userInfo
+    const data = unwrapData<any>(res, {})
+    token.value = data?.token || null
+    userInfo.value = data?.userInfo || null
     localStorage.setItem('bk_token', token.value || '')
     localStorage.setItem('bk_user', JSON.stringify(userInfo.value))
   }
@@ -30,7 +33,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function fetchUserInfo() {
     const res = await request.get('/auth/info')
-    userInfo.value = res.data
+    userInfo.value = unwrapData<any>(res, null)
     localStorage.setItem('bk_user', JSON.stringify(userInfo.value))
   }
 
@@ -43,6 +46,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function clearAuth() {
+    // Ensure user-scoped data is isolated between different accounts.
+    useChatStore().resetState()
     token.value = null
     userInfo.value = null
     localStorage.removeItem('bk_token')

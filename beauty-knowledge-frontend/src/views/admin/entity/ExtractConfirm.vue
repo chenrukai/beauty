@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <el-card class="extract-confirm-page">
     <template #header>实体与关系候选确认</template>
 

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="home-page">
     <section class="hero">
       <div>
@@ -71,6 +71,39 @@
       <h3 style="margin-top: 0">{{ knowledgeDetail.title }}</h3>
       <p class="dialog-summary">{{ knowledgeDetail.summary || '暂无摘要' }}</p>
       <LinkifiedText class="dialog-content" :text="knowledgeDetail.content || '暂无正文'" />
+
+      <div class="file-section">
+        <h4>关联文件（{{ knowledgeFiles.length }}）</h4>
+        <el-table
+          v-if="knowledgeFiles.length"
+          :data="knowledgeFiles"
+          size="small"
+          border
+          class="file-table"
+        >
+          <el-table-column label="文件名" min-width="280" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ row?.originalName || row?.fileName || `文件-${row?.id ?? '-'}` }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="fileType" label="类型" width="120" />
+          <el-table-column label="状态" width="110">
+            <template #default="{ row }">
+              <el-tag size="small" :type="String(row?.processStatus || row?.status || '').toUpperCase() === 'SUCCESS' ? 'success' : 'info'">
+                {{ row?.processStatus || row?.status || '-' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="createdAt" label="上传时间" min-width="170" />
+          <el-table-column label="操作" width="100">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="openRelatedFile(row)">打开</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div v-else class="muted">暂无关联文件</div>
+      </div>
+
       <div class="dialog-actions">
         <el-button
           size="small"
@@ -90,6 +123,8 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import request from '../../api/request'
+import { unwrapData } from '../../api/response'
+import { useAuthStore } from '../../stores/auth'
 import LinkifiedText from '../../components/common/LinkifiedText.vue'
 
 interface RecommendItem {
@@ -100,6 +135,9 @@ interface RecommendItem {
 }
 
 const router = useRouter()
+const auth = useAuthStore()
+const configuredBaseURL = import.meta.env.VITE_API_BASE_URL?.trim()
+const apiBaseURL = configuredBaseURL || 'http://127.0.0.1:8080/api'
 const loadingRecommend = ref(false)
 const recommendList = ref<RecommendItem[]>([])
 const recommendPageNum = ref(1)
@@ -108,7 +146,9 @@ const recommendTotal = ref(0)
 const noticeList = ref<any[]>([])
 const knowledgeDialogVisible = ref(false)
 const knowledgeDetail = ref<any>(null)
+const knowledgeFiles = ref<any[]>([])
 const favoriteMap = ref<Record<number, boolean>>({})
+const openingFileIds = ref<Set<number>>(new Set())
 
 onMounted(async () => {
   await Promise.allSettled([fetchRecommend(1), fetchNotices()])
@@ -121,7 +161,7 @@ function goChat(q = '') {
 async function fetchNotices() {
   try {
     const res = await request.get('/notice/list', { params: { size: 3 } })
-    noticeList.value = res.data || []
+    noticeList.value = unwrapData<any[]>(res, [])
   } catch {
     noticeList.value = []
   }
@@ -139,13 +179,14 @@ async function fetchRecommend(page = recommendPageNum.value) {
         sortBy: 'hot'
       }
     })
-    recommendList.value = (res.data?.records || []).map((item: any) => ({
+    const page = unwrapData<any>(res, {})
+    recommendList.value = (page?.records || []).map((item: any) => ({
       id: item.id,
       title: String(item.title || `知识 #${item.id}`),
       content: toTeaser(item.content || item.summary || '', 15),
       viewCount: Number(item.viewCount || 0)
     }))
-    recommendTotal.value = Number(res.data?.total || 0)
+    recommendTotal.value = Number(page?.total || 0)
     await syncFavoriteState(recommendList.value.map((item) => item.id))
   } catch {
     recommendList.value = []
@@ -164,8 +205,9 @@ function toTeaser(text: string, limit = 15) {
 async function openKnowledge(knowledgeId: number) {
   try {
     const res = await request.get(`/knowledge/${knowledgeId}`)
-    const data = res.data || {}
+    const data = unwrapData<any>(res, {})
     knowledgeDetail.value = data.knowledge || null
+    knowledgeFiles.value = Array.isArray(data.files) ? data.files : []
     await syncFavoriteState([knowledgeId])
     knowledgeDialogVisible.value = true
     await recordAction('click', { targetType: 'knowledge', targetId: knowledgeId, source: 'recommend' })
@@ -176,6 +218,46 @@ async function openKnowledge(knowledgeId: number) {
   }
 }
 
+async function openRelatedFile(row: any) {
+  const fileId = Number(row?.id || 0)
+  if (!fileId) {
+    ElMessage.warning('文件ID无效，无法打开')
+    return
+  }
+  if (openingFileIds.value.has(fileId)) {
+    return
+  }
+  openingFileIds.value.add(fileId)
+  const opened = window.open('', '_blank')
+  if (!opened) {
+    openingFileIds.value.delete(fileId)
+    ElMessage.error('浏览器拦截了弹窗，请允许当前站点打开新页面')
+    return
+  }
+  try {
+    const token = auth.token || localStorage.getItem('bk_token') || ''
+    const resp = await fetch(`${apiBaseURL}/file/${fileId}/open`, {
+      method: 'GET',
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+    if (!resp.ok) {
+      const text = await resp.text()
+      throw new Error(text || `文件打开失败（HTTP ${resp.status}）`)
+    }
+    const blob = await resp.blob()
+    const url = URL.createObjectURL(blob)
+    opened.location.href = url
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000)
+  } catch (e: any) {
+    opened.close()
+    ElMessage.error(e?.message || '文件打开失败')
+  } finally {
+    window.setTimeout(() => {
+      openingFileIds.value.delete(fileId)
+    }, 800)
+  }
+}
+
 async function syncFavoriteState(ids: number[]) {
   const uniqueIds = Array.from(new Set(ids.filter((id) => Number.isFinite(id))))
   if (!uniqueIds.length) return
@@ -183,7 +265,8 @@ async function syncFavoriteState(ids: number[]) {
     uniqueIds.map(async (id) => {
       try {
         const res = await request.get(`/user/favorite/check/${id}`)
-        favoriteMap.value[id] = Boolean(res.data?.favorited)
+        const data = unwrapData<any>(res, {})
+        favoriteMap.value[id] = Boolean(data?.favorited)
       } catch {
         favoriteMap.value[id] = false
       }
@@ -337,6 +420,19 @@ async function recordAction(actionType: string, payload: any = {}) {
   white-space: pre-wrap;
   line-height: 1.8;
   color: var(--app-text);
+}
+
+.file-section {
+  margin-top: 14px;
+}
+
+.file-section h4 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.file-table {
+  margin-top: 6px;
 }
 
 .dialog-actions {

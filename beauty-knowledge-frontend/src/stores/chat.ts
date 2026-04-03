@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import request from '../api/request'
 import { useAuthStore } from './auth'
+import { unwrapData } from '../api/response'
 
 export interface Source {
   chunkId: number
@@ -31,13 +32,14 @@ export const useChatStore = defineStore('chat', () => {
 
   async function fetchSessions() {
     const res = await request.get('/chat/session')
-    sessionList.value = res.data || []
+    sessionList.value = unwrapData<any[]>(res, [])
   }
 
   async function fetchMessages(sessionId: number) {
     const res = await request.get(`/chat/session/${sessionId}/messages`)
+    const list = unwrapData<any[]>(res, [])
     currentSessionId.value = sessionId
-    messages.value = (res.data || []).map((x: any) => ({
+    messages.value = list.map((x: any) => ({
       role: x.role,
       content: x.content,
       sources: normalizeSources(x.sources)
@@ -48,7 +50,7 @@ export const useChatStore = defineStore('chat', () => {
 
   async function createSession() {
     const res = await request.post('/chat/session/new')
-    const session = res.data
+    const session = unwrapData<any>(res, null)
     if (session?.id) {
       currentSessionId.value = Number(session.id)
       messages.value = []
@@ -205,6 +207,15 @@ export const useChatStore = defineStore('chat', () => {
     return normalized.length ? normalized : undefined
   }
 
+  function resetState() {
+    sessionList.value = []
+    currentSessionId.value = null
+    messages.value = []
+    isStreaming.value = false
+    streamingContent.value = ''
+    sources.value = []
+  }
+
   return {
     sessionList,
     currentSessionId,
@@ -216,6 +227,7 @@ export const useChatStore = defineStore('chat', () => {
     fetchMessages,
     createSession,
     streamAsk,
-    deleteSession
+    deleteSession,
+    resetState
   }
 })

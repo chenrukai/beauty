@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <el-card class="kg-page">
     <template #header>知识图谱工作台（演示版）</template>
 
@@ -90,7 +90,7 @@
 
     <el-row :gutter="16">
       <el-col :xs="24" :lg="14">
-        <el-card shadow="never">
+        <el-card shadow="never" class="panel-card">
           <template #header>3) 关系清单（可查证据）</template>
           <el-table :data="graphEdges" stripe height="420" class="data-table">
             <el-table-column label="关系语义" min-width="320" show-overflow-tooltip>
@@ -225,7 +225,7 @@ const pathText = computed(() => {
     const right = nodes[i + 1]?.name || formatNodeKey(edges[i].objectKey)
     pieces.push(`${left} --${predicateZh(edges[i].predicate)}--> ${right}`)
   }
-  return pieces.join(' ； ')
+  return pieces.join(' ；')
 })
 
 function formatConfidence(value: any) {

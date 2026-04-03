@@ -3,11 +3,16 @@ package com.beauty.knowledge.module.cms.controller;
 import com.beauty.knowledge.common.result.Result;
 import com.beauty.knowledge.infrastructure.ai.python.PythonAIClient;
 import com.beauty.knowledge.module.cms.domain.vo.FileUploadVO;
+import com.beauty.knowledge.module.cms.domain.vo.FileBinaryVO;
 import com.beauty.knowledge.module.cms.domain.vo.ProcessTaskViewVO;
 import com.beauty.knowledge.module.cms.service.FileService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -50,6 +56,25 @@ public class FileController {
     @GetMapping("/task/recent")
     public Result<List<ProcessTaskViewVO>> recentTasks(@RequestParam(value = "size", required = false) Integer size) {
         return Result.success(fileService.recentTasks(size));
+    }
+
+    @Operation(summary = "打开关联文件")
+    @GetMapping("/{fileId}/open")
+    public ResponseEntity<byte[]> open(@PathVariable Long fileId) {
+        FileBinaryVO file = fileService.openFile(fileId);
+        MediaType mediaType = MediaType.APPLICATION_OCTET_STREAM;
+        try {
+            mediaType = MediaType.parseMediaType(file.getContentType());
+        } catch (Exception ignore) {
+        }
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(mediaType);
+        headers.setContentDisposition(ContentDisposition.inline()
+                .filename(file.getFileName(), StandardCharsets.UTF_8)
+                .build());
+        return ResponseEntity.ok()
+                .headers(headers)
+                .body(file.getBytes());
     }
 
     @Operation(summary = "重试任务")

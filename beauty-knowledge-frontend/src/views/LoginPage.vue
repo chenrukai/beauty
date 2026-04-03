@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="login-page">
     <section class="hero-panel">
       <div class="hero-copy">

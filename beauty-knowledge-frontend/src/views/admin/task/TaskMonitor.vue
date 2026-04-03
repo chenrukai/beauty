@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <el-card class="task-monitor-page">
     <template #header>任务监控</template>
 
@@ -116,6 +116,8 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import request from '../../../api/request'
+import { unwrapData } from '../../../api/response'
+import { mapTextToUserErrorMessage, toUserErrorMessage } from '../../../utils/error-message'
 import { useKnowledgeStore } from '../../../stores/knowledge'
 
 const store = useKnowledgeStore()
@@ -164,7 +166,7 @@ function taskStatusType(status?: string) {
 
 function taskStatusText(status?: string) {
   const s = (status || '').toUpperCase()
-  if (s === 'UPLOADED') return '上传'
+  if (s === 'UPLOADED') return '已上传'
   if (s === 'PARSING') return '解析中'
   if (s === 'PARSE_SUCCESS') return '解析成功'
   if (s === 'PARSE_FAILED') return '解析失败'
@@ -205,12 +207,11 @@ function taskTypeText(taskType?: string) {
 function displayResultMsg(row: any) {
   const msg = String(row?.resultMsg || '').trim()
   if (!msg) return '-'
+  const mapped = mapTextToUserErrorMessage(msg, msg)
+  if (mapped !== msg) return mapped
   const lower = msg.toLowerCase()
-  if (lower.includes('transcribe_unavailable')) return '视频转写不可用：请检查 Python transcribe 服务和 ffmpeg'
   if (lower.includes('no text extracted')) return '未提取到文本：文件可能不可解析（可先检查任务状态）'
-  if (lower.includes('entity_extract_pending')) return '实体待确认表未初始化：请先执行数据库初始化脚本'
-  if (lower.includes('connection refused') && lower.includes('5672')) return '消息队列未连接（RabbitMQ 5672 拒绝连接）'
-  return msg
+  return mapped
 }
 
 async function loadRecent() {
@@ -244,7 +245,7 @@ async function retryTask(id: number) {
     await loadRecent()
     await pickTask(id)
   } catch (e: any) {
-    ElMessage.error(e?.message || '重试失败')
+    ElMessage.error(toUserErrorMessage(e, '重试失败'))
   }
 }
 
@@ -256,16 +257,17 @@ async function reExtractEntity(row: any) {
   }
   try {
     const res = await request.post(`/entity/extract/file/${fileId}`)
-    const inserted = Number(res.data?.insertedCount || 0)
-    const matched = Number(res.data?.matchedCount || 0)
-    const msg = String(res.data?.message || '重抽取完成')
+    const data = unwrapData<any>(res, {})
+    const inserted = Number(data?.insertedCount || 0)
+    const matched = Number(data?.matchedCount || 0)
+    const msg = String(data?.message || '重抽取完成')
     if (inserted > 0) {
       ElMessage.success(`${msg}（命中 ${matched} 条）`)
     } else {
       ElMessage.warning(`${msg}（命中 ${matched} 条）`)
     }
   } catch (e: any) {
-    const raw = String(e?.message || '')
+    const raw = toUserErrorMessage(e, '重抽取失败')
     if (raw.includes('文件尚未解析成功')) {
       ElMessage.error('重抽取失败：文件还未解析成功，请先在任务监控确认状态为成功')
       return

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import request from '../api/request'
+import { unwrapData } from '../api/response'
 
 export const useKnowledgeStore = defineStore('knowledge', () => {
   const categoryTree = ref<any[]>([])
@@ -12,22 +13,23 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
 
   async function fetchCategoryTree() {
     const res = await request.get('/category/tree')
-    categoryTree.value = res.data || []
+    categoryTree.value = unwrapData<any[]>(res, [])
   }
 
   async function fetchKnowledgePage(params: any = {}) {
     const res = await request.get('/knowledge/page', { params })
-    knowledgeList.value = res.data?.records || []
+    const page = unwrapData<any>(res, {})
+    knowledgeList.value = page?.records || []
     knowledgePage.value = {
-      total: Number(res.data?.total || 0),
-      pageNum: Number(res.data?.pageNum || params.pageNum || 1),
-      pageSize: Number(res.data?.pageSize || params.pageSize || 20)
+      total: Number(page?.total || 0),
+      pageNum: Number(page?.pageNum || params.pageNum || 1),
+      pageSize: Number(page?.pageSize || params.pageSize || 20)
     }
   }
 
   async function fetchKnowledgeDetail(id: number) {
     const res = await request.get(`/knowledge/${id}`)
-    const data = res.data || {}
+    const data = unwrapData<any>(res, {})
     const knowledge = data.knowledge || {}
     return {
       ...knowledge,
@@ -49,13 +51,14 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
 
   async function pollTask(taskId: number) {
     const res = await request.get(`/file/task/${taskId}`)
-    taskMap.value[taskId] = res.data
-    return res.data
+    const data = unwrapData<any>(res, null)
+    taskMap.value[taskId] = data
+    return data
   }
 
   async function fetchRecentTasks(size = 10) {
     const res = await request.get('/file/task/recent', { params: { size } })
-    recentTasks.value = res.data || []
+    recentTasks.value = unwrapData<any[]>(res, [])
     return recentTasks.value
   }
 

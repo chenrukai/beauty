@@ -99,7 +99,7 @@ public class ChatService {
     public Flux<ChatStreamChunk> streamChat(Long userId, ChatRequest request) {
         LLMProvider llmProvider = llmProviderObjectProvider.getIfAvailable();
         if (llmProvider == null) {
-            throw new BusinessException(ErrorCode.AI_SERVICE_UNAVAILABLE, "鏈壘鍒板彲鐢ㄧ殑LLMProvider");
+            throw new BusinessException(ErrorCode.AI_SERVICE_UNAVAILABLE, "AI服务未配置：缺少可用的 LLMProvider");
         }
 
         Long sessionId = chatSessionService.getOrCreate(userId, request.getSessionId(), request.getQuestion());
@@ -150,7 +150,7 @@ public class ChatService {
                             ? "AI service is temporarily unavailable. Please check Ollama/model configuration and try again."
                             : answer;
                     if (StringUtils.hasText(finalKgInsightSummary) && !finalAnswer.contains("【图谱洞察摘要】")) {
-                        finalAnswer = "【图谱洞察摘要】" + finalKgInsightSummary + "\n\n" + finalAnswer;
+                        finalAnswer = "【图谱洞察摘要】 " + finalKgInsightSummary + "\n\n" + finalAnswer;
                     }
                     List<ChunkResult> displaySources = buildDisplaySources(filteredSources);
                     chatRecordService.saveAssistantAnswer(sessionId, finalAnswer, displaySources);
@@ -191,11 +191,11 @@ public class ChatService {
     public UploadSummaryResult summarizeUpload(Long userId, MultipartFile file, String instruction, Long sessionId) {
         ensureAttachmentTableReady();
         if (file == null || file.isEmpty()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "涓婁紶鏂囦欢涓嶈兘涓虹┖");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "上传文件不能为空");
         }
         LLMProvider llmProvider = llmProviderObjectProvider.getIfAvailable();
         if (llmProvider == null) {
-            throw new BusinessException(ErrorCode.AI_SERVICE_UNAVAILABLE, "鏈壘鍒板彲鐢ㄧ殑LLMProvider");
+            throw new BusinessException(ErrorCode.AI_SERVICE_UNAVAILABLE, "AI服务未配置：缺少可用的 LLMProvider");
         }
 
         String extractedText = dedupeTranscriptText(extractUploadText(file));
@@ -217,7 +217,7 @@ public class ChatService {
 
         String finalInstruction = StringUtils.hasText(instruction)
                 ? instruction.trim()
-                : "璇锋€荤粨杩欎釜鏂囦欢鍐呭";
+                : "总结该附件内容，突出关键信息和可执行建议。";
         Long sid = chatSessionService.getOrCreate(userId, sessionId, finalInstruction);
         appendUploadContext(sid, new UploadContext(
                 fileName,
@@ -231,14 +231,21 @@ public class ChatService {
         chatRecordService.saveUserQuestion(sid, userQuestion);
 
         String systemPrompt = """
-                浣犳槸鏂囨。鎬荤粨鍔╂墜銆傝涓ユ牸鍩轰簬鐢ㄦ埛涓婁紶鏂囦欢鍐呭鍥炵瓟銆?                杈撳嚭蹇呴』鏄函鏂囨湰锛屼笉瑕佷娇鐢?Markdown 绗﹀彿锛堝 #銆?銆?銆佹暟瀛楀垪琛ㄥ墠缂€锛夈€?                缁撴瀯瑕佹眰锛?                缁撹锛?                鍏抽敭瑕佺偣锛?                琛屽姩寤鸿锛?                鑻ユ枃浠朵俊鎭笉瓒筹紝鏄庣‘鎸囧嚭涓嶈冻锛屼笉瑕佺紪閫犮€?                """;
+                你是文档总结助手。请严格基于用户上传文件内容回答。
+                输出必须是纯文本，不要使用 Markdown 符号（如 #、*、-、数字列表前缀）。
+                结构要求：
+                结论：
+                关键要点：
+                行动建议：
+                如果文件信息不足，请明确指出不足，不要编造。
+                """;
         String userPrompt = finalInstruction
                 + "\n\n【结构化价格事实（优先使用）】\n"
                 + renderPriceFactsForPrompt(facts)
-                + "\n\n銆愭枃浠跺唴瀹广€慭n" + clipped;
+                + "\n\n【文件内容】\n" + clipped;
         String answer = llmProvider.chatAsync(systemPrompt, userPrompt).block();
         if (isRefusalLike(answer)) {
-            String retryPrompt = systemPrompt + "\n请不要拒答；仅基于附件文本给出摘要。若信息不足请明确写“信息不足”。";
+            String retryPrompt = systemPrompt + "\n请不要拒答；仅基于附件文本给出总结。若信息不足请明确写“信息不足”。";
             answer = llmProvider.chatAsync(retryPrompt, userPrompt).block();
         }
         String rawAnswer = StringUtils.hasText(answer)
@@ -256,20 +263,20 @@ public class ChatService {
     public UploadAskResult askByUploadedDocument(Long userId, Long sessionId, String question) {
         ensureAttachmentTableReady();
         if (sessionId == null) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "sessionId涓嶈兘涓虹┖");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "sessionId不能为空");
         }
         if (!StringUtils.hasText(question)) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "闂涓嶈兘涓虹┖");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "问题不能为空");
         }
         ensureSessionOwned(userId, sessionId);
         UploadContext ctx = getLatestUploadContext(sessionId);
         if (ctx == null || !StringUtils.hasText(ctx.content())) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "褰撳墠浼氳瘽娌℃湁涓婁紶鏂囦欢涓婁笅鏂囷紝璇峰厛涓婁紶鏂囦欢");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "当前会话没有可用附件内容，请先上传文件后再提问");
         }
 
         LLMProvider llmProvider = llmProviderObjectProvider.getIfAvailable();
         if (llmProvider == null) {
-            throw new BusinessException(ErrorCode.AI_SERVICE_UNAVAILABLE, "鏈壘鍒板彲鐢ㄧ殑LLMProvider");
+            throw new BusinessException(ErrorCode.AI_SERVICE_UNAVAILABLE, "AI服务未配置：缺少可用的 LLMProvider");
         }
 
         String clipped = ctx.content().length() > uploadAskMaxChars
@@ -281,11 +288,15 @@ public class ChatService {
         chatRecordService.saveUserQuestion(sessionId, userQuestion);
 
         String systemPrompt = """
-                浣犳槸鏂囨。闂瓟鍔╂墜銆傝浠呬緷鎹敤鎴蜂笂浼犵殑鏂囦欢鍐呭鍥炵瓟銆?                涓嶈缂栭€犳枃浠堕噷娌℃湁鐨勪俊鎭€?                杈撳嚭蹇呴』鏄函鏂囨湰锛屼笉瑕佷娇鐢?Markdown 绗﹀彿锛堝 #銆?銆?銆佹暟瀛楀垪琛ㄥ墠缂€锛夈€?                鑻ユ枃浠朵腑鎵句笉鍒扮瓟妗堬紝璇锋槑纭洖澶嶁€滄枃浠朵腑鏈壘鍒拌淇℃伅鈥濄€?                """;
+                你是附件问答助手。请仅依据附件文本回答用户问题。
+                禁止编造附件中不存在的信息。
+                输出必须是纯文本，不要使用 Markdown 符号（如 #、*、-、数字列表前缀）。
+                如果无法从附件中找到答案，请明确写“信息不足”，并建议补充哪些材料。
+                """;
         String userPrompt = "用户问题：" + cleanQuestion
                 + "\n\n【结构化价格事实（优先使用）】\n"
                 + renderPriceFactsForPrompt(facts)
-                + "\n\n銆愭枃浠跺唴瀹广€慭n" + clipped;
+                + "\n\n【文件内容】\n" + clipped;
         String answer = llmProvider.chatAsync(systemPrompt, userPrompt).block();
         if (isRefusalLike(answer)) {
             String retryPrompt = systemPrompt + "\n请不要拒答；仅基于附件文本回答问题。若信息不足请明确写“信息不足”。";
@@ -320,15 +331,25 @@ public class ChatService {
                 i = rows.size() - 1;
             }
             ChatAttachment row = rows.get(i);
-            byte[] bytes = minioStorageService.download(row.getMinioPath());
+            byte[] bytes;
+            try {
+                bytes = minioStorageService.download(row.getMinioPath());
+            } catch (Exception ex) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "附件内容不存在或无法访问，请重新上传后重试。");
+            }
             String contentType = StringUtils.hasText(row.getContentType()) ? row.getContentType() : "application/octet-stream";
             return new UploadAttachment(row.getFileName(), contentType, bytes);
         }
         UploadContext ctx = getUploadContextByIndex(sessionId, index);
         if (ctx == null || !StringUtils.hasText(ctx.minioPath())) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "No upload attachment found for this session");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "当前会话未找到可打开附件。若该会话来自旧版本或服务重启前，建议重新上传附件。");
         }
-        byte[] bytes = minioStorageService.download(ctx.minioPath());
+        byte[] bytes;
+        try {
+            bytes = minioStorageService.download(ctx.minioPath());
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "附件内容不存在或无法访问，请重新上传后重试。");
+        }
         String contentType = StringUtils.hasText(ctx.contentType()) ? ctx.contentType() : "application/octet-stream";
         return new UploadAttachment(ctx.fileName(), contentType, bytes);
     }
@@ -491,7 +512,7 @@ public class ChatService {
         }
 
         String summary = "产品「" + product.getName() + "」已关联成分 " + ingredientIdSet.size()
-                + " 个，功效 " + allEffectIds.size() + " 个（直连 " + directEffectIds.size() + "，推导 "
+                + " 个，功效 " + allEffectIds.size() + " 个（直连 " + directEffectIds.size() + "，推断 "
                 + inferredEffectIds.size() + "），证据 " + evidenceCount + " 条。";
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -517,7 +538,7 @@ public class ChatService {
             boolean video = isVideo(file);
             boolean audio = isAudio(file);
             if (audio) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "AUDIO_DISABLED: 当前项目不支持音频上传");
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "AUDIO_DISABLED: 当前项目暂不支持音频上传。");
             }
             if (image) {
                 try {
@@ -544,13 +565,13 @@ public class ChatService {
             if (image && !StringUtils.hasText(clean)) {
                 throw new BusinessException(
                         ErrorCode.BAD_REQUEST,
-                        "IMAGE_TEXT_EMPTY: 当前仅支持图片文字识别，未检测到可识别文字。请上传包含清晰文字的图片，或改用文档后再提问。"
+                        "IMAGE_TEXT_EMPTY: 当前仅支持图片文字识别，但未检测到可识别文本。请上传包含清晰文字的图片，或改用文档后再提问。"
                 );
             }
             if (video && !StringUtils.hasText(clean)) {
                 throw new BusinessException(
                         ErrorCode.BAD_REQUEST,
-                        "TRANSCRIBE_UNAVAILABLE: 褰撳墠鐜鏈惎鐢ㄨ棰?闊抽杞啓鏈嶅姟锛岃妫€鏌?Python transcribe 鎺ュ彛涓?ffmpeg"
+                        "TRANSCRIBE_UNAVAILABLE: 视频转写暂不可用。请检查 Python 转写服务与 ffmpeg 是否已正确安装和启动。"
                 );
             }
             return clean;
@@ -558,7 +579,7 @@ public class ChatService {
             if (e instanceof BusinessException be) {
                 throw be;
             }
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "鏂囦欢瑙ｆ瀽澶辫触");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件解析失败，请检查文件格式后重试");
         }
     }
 
@@ -704,7 +725,7 @@ public class ChatService {
         }
         return text.toLowerCase()
                 .replace("＋", "+")
-                .replaceAll("[\\s\\-_/·•,，。！？!?:：;；()（）\\[\\]{}]+", "")
+                .replaceAll("[\\s\\-_/路·,，。！？:：;；()（）\\[\\]{}]+", "")
                 .trim();
     }
 
@@ -859,7 +880,7 @@ public class ChatService {
 
     private String buildPriceSafeFallback(PriceFacts facts, String originalAnswer) {
         StringBuilder sb = new StringBuilder();
-        sb.append("结论：图片中价格信息已按可识别事实校正。\n");
+        sb.append("结论：图片中的价格信息已按可识别事实校正。\n");
         if (!facts.promoPrices().isEmpty()) {
             sb.append("活动/秒杀价：").append(String.join("、", withYuan(facts.promoPrices()))).append("。\n");
         }
@@ -961,9 +982,9 @@ public class ChatService {
     private String fallbackSummaryFromText(String clipped, String fileName) {
         String text = StringUtils.hasText(clipped) ? clipped.replace('\r', '\n').trim() : "";
         if (!StringUtils.hasText(text)) {
-            return "已接收附件「" + fileName + "」，但可解析文本不足，建议上传更清晰的文本/字幕后重试。";
+            return "已接收附件「" + fileName + "」，但可解析文本不足，建议上传更清晰的文本或字幕后重试。";
         }
-        String[] parts = text.split("[\\n。！？!?]");
+        String[] parts = text.split("[\\n。！？]");
         List<String> bullets = new ArrayList<>();
         for (String part : parts) {
             String line = part == null ? "" : part.trim();
@@ -1024,14 +1045,60 @@ public class ChatService {
             if (p.isBlank()) {
                 continue;
             }
-            String key = p.toLowerCase().replaceAll("[\\s\\p{Punct}，。！？、；：“”‘’（）()\\-]+", "");
+            String key = normalizeParagraphKey(p);
             if (key.length() >= 10 && seen.contains(key)) {
                 continue;
             }
             seen.add(key);
             out.add(p);
         }
+        return collapseRepeatedTailBlocks(out);
+    }
+
+    private String normalizeParagraphKey(String text) {
+        if (!StringUtils.hasText(text)) {
+            return "";
+        }
+        return text.toLowerCase().replaceAll("[\\s\\p{Punct}，。！？、；：“”‘’（）\\-]+", "");
+    }
+
+    private String collapseRepeatedTailBlocks(List<String> paragraphs) {
+        if (paragraphs == null || paragraphs.isEmpty()) {
+            return "";
+        }
+        List<String> out = new ArrayList<>(paragraphs);
+        boolean changed = true;
+        while (changed) {
+            changed = false;
+            int n = out.size();
+            int maxBlock = Math.min(4, n / 2);
+            for (int block = 1; block <= maxBlock; block++) {
+                if (hasSameTailBlock(out, block)) {
+                    // Remove one duplicated tail block each round.
+                    out = new ArrayList<>(out.subList(0, out.size() - block));
+                    changed = true;
+                    break;
+                }
+            }
+        }
         return String.join("\n", out);
+    }
+
+    private boolean hasSameTailBlock(List<String> list, int blockSize) {
+        int n = list.size();
+        if (blockSize <= 0 || n < blockSize * 2) {
+            return false;
+        }
+        int prevStart = n - blockSize * 2;
+        int tailStart = n - blockSize;
+        for (int i = 0; i < blockSize; i++) {
+            String a = normalizeParagraphKey(list.get(prevStart + i));
+            String b = normalizeParagraphKey(list.get(tailStart + i));
+            if (!StringUtils.hasText(a) || !a.equals(b)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private String toPlainText(String raw) {
@@ -1155,14 +1222,15 @@ public class ChatService {
             if (s == null) {
                 continue;
             }
-            String normalized = normalizeContent(s.getContent());
-            String key = (s.getFileId() == null ? 0L : s.getFileId()) + "#"
-                    + (s.getPageNo() == null ? 0 : s.getPageNo()) + "#"
+            ChunkResult display = enrichSourceContentForDisplay(s);
+            String normalized = normalizeContent(display == null ? "" : display.getContent());
+            String key = (display == null || display.getFileId() == null ? 0L : display.getFileId()) + "#"
+                    + (display == null || display.getPageNo() == null ? 0 : display.getPageNo()) + "#"
                     + normalized;
             if (!seen.add(key)) {
                 continue;
             }
-            out.add(enrichSourceContentForDisplay(s));
+            out.add(display);
             if (out.size() >= top) {
                 break;
             }
@@ -1238,3 +1306,4 @@ public class ChatService {
         }
     }
 }
+

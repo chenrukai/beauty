@@ -92,7 +92,11 @@
           placeholder="请输入问题..."
           @keydown="onAskInputKeydown"
         />
-        <div class="ask-tools">
+        <div
+          class="ask-tools"
+          @dragover.prevent
+          @drop.prevent="onDropFiles"
+        >
           <input
             ref="fileInputRef"
             class="file-input"
@@ -104,6 +108,19 @@
           <el-button plain @click="triggerFilePick">上传文件（文档/图片/视频）</el-button>
           <span class="file-text">{{ selectedFileName }}</span>
           <el-button v-if="attachedFiles.length" text type="danger" @click="clearFile">移除</el-button>
+        </div>
+        <div class="session-attachments" v-if="sessionAttachments.length">
+          <span class="attachments-label">会话附件：</span>
+          <el-tag
+            v-for="item in sessionAttachments"
+            :key="`${item.index}-${item.fileName}`"
+            class="attachment-tag"
+            effect="plain"
+            @click="openSessionAttachment(item.index)"
+          >
+            {{ item.fileName }}
+          </el-tag>
+          <el-button text size="small" @click="openSessionAttachment('all')">全部打开</el-button>
         </div>
         <el-button type="primary" :loading="chat.isStreaming || summarizing" @click="ask">发送</el-button>
       </div>
@@ -121,6 +138,8 @@ import SourceCard from '../../components/chat/SourceCard.vue'
 import { useChatStore } from '../../stores/chat'
 import { useAuthStore } from '../../stores/auth'
 import request from '../../api/request'
+import { unwrapData } from '../../api/response'
+import { mapTextToUserErrorMessage, toUserErrorMessage } from '../../utils/error-message'
 
 const route = useRoute()
 const chat = useChatStore()
@@ -133,6 +152,7 @@ const attachedFiles = ref<File[]>([])
 const summarizing = ref(false)
 const documentModeSession = ref<number | null>(null)
 const documentModeFileName = ref('')
+const sessionAttachments = ref<Array<{ index: number; fileName: string; contentType?: string }>>([])
 const sessionPageNum = ref(1)
 const sessionPageSize = 10
 
@@ -178,7 +198,15 @@ watch(
 
 onMounted(async () => {
   await chat.fetchSessions()
+  await refreshSessionAttachments()
 })
+
+watch(
+  () => chat.currentSessionId,
+  () => {
+    refreshSessionAttachments()
+  }
+)
 
 async function ask() {
   const q = question.value.trim() || '总结这个文件的内容'
@@ -219,6 +247,16 @@ async function onPickFiles(e: Event) {
   const input = e.target as HTMLInputElement
   const picked = Array.from(input.files || [])
   if (!picked.length) return
+  await appendPickedFiles(picked)
+}
+
+async function onDropFiles(e: DragEvent) {
+  const picked = Array.from(e.dataTransfer?.files || [])
+  if (!picked.length) return
+  await appendPickedFiles(picked)
+}
+
+async function appendPickedFiles(picked: File[]) {
   const merged = [...attachedFiles.value]
   const exists = new Set(merged.map((f) => `${f.name}#${f.size}#${f.lastModified}`))
   for (const f of picked) {
@@ -238,11 +276,7 @@ function clearFile() {
 }
 
 function normalizeUploadErrorMessage(message: string) {
-  const raw = (message || '').trim()
-  if (!raw) return ''
-  return raw
-    .replace(/^IMAGE_TEXT_EMPTY:\s*/i, '')
-    .replace(/^TRANSCRIBE_UNAVAILABLE:\s*/i, '')
+  return mapTextToUserErrorMessage(message, '')
 }
 
 async function askWithUploads(q: string) {
@@ -265,8 +299,9 @@ async function askWithUploads(q: string) {
       const res = await request.post('/chat/summarize-upload', fd, {
         headers: { 'Content-Type': 'multipart/form-data' }
       })
-      const summary = String(res.data?.summary || '').trim()
-      const sid = Number(res.data?.sessionId || 0)
+      const data = unwrapData<any>(res, {})
+      const summary = String(data?.summary || '').trim()
+      const sid = Number(data?.sessionId || 0)
       if (sid > 0) {
         chat.currentSessionId = sid
         documentModeSession.value = sid
@@ -279,6 +314,7 @@ async function askWithUploads(q: string) {
       last.content = chunks.join('\n\n')
     }
     await chat.fetchSessions()
+    await refreshSessionAttachments()
   } catch (e: any) {
     const raw = String(e?.message || '').trim()
     const normalized = normalizeUploadErrorMessage(raw)
@@ -286,13 +322,7 @@ async function askWithUploads(q: string) {
     if (last && last.role === 'assistant') {
       last.content = normalized || 'Sorry, AI service is unavailable. Please try again later.'
     }
-    if (raw.toLowerCase().includes('transcribe_unavailable')) {
-      ElMessage.error('视频转写不可用：请检查 Python transcribe 服务与 ffmpeg')
-    } else if (raw.toLowerCase().includes('image_text_empty')) {
-      ElMessage.error('当前仅支持识别图片里的文字，未检测到可识别文字。可上传文字更清晰的图片或文档。')
-    } else {
-      ElMessage.error(raw || '文档总结失败，请稍后重试')
-    }
+    ElMessage.error(normalized || toUserErrorMessage(e, '文档总结失败，请稍后重试'))
   } finally {
     summarizing.value = false
   }
@@ -308,12 +338,14 @@ async function askInDocumentMode(q: string) {
       sessionId: chat.currentSessionId,
       question: q
     })
-    const answer = String(res.data?.answer || '').trim()
+    const data = unwrapData<any>(res, {})
+    const answer = String(data?.answer || '').trim()
     const last = chat.messages[chat.messages.length - 1]
     if (last && last.role === 'assistant') {
       last.content = answer || 'AI service is unavailable. Please try again later.'
     }
     await chat.fetchSessions()
+    await refreshSessionAttachments()
   } catch (e: any) {
     const raw = String(e?.message || '').trim()
     const normalized = normalizeUploadErrorMessage(raw)
@@ -321,11 +353,7 @@ async function askInDocumentMode(q: string) {
     if (last && last.role === 'assistant') {
       last.content = normalized || 'Sorry, AI service is unavailable. Please try again later.'
     }
-    if (raw.toLowerCase().includes('image_text_empty')) {
-      ElMessage.error('当前仅支持识别图片里的文字，未检测到可识别文字。')
-    } else {
-      ElMessage.error(raw || '文档追问失败，请先重新上传文件')
-    }
+    ElMessage.error(normalized || toUserErrorMessage(e, '文档追问失败，请先重新上传文件'))
   } finally {
     summarizing.value = false
   }
@@ -342,50 +370,100 @@ function hasUploadedAttachment(content: string) {
   return /\[已上传附件/.test(content)
 }
 
-async function openSessionAttachment() {
-  if (!chat.currentSessionId) {
+async function openSessionAttachment(index?: number | 'all') {
+  const sid = chat.currentSessionId
+  if (!sid) {
     ElMessage.warning('请先进入对应会话')
     return
   }
   try {
     const token = auth.token || localStorage.getItem('bk_token') || ''
-    const listRes = await request.get(`/chat/session/${chat.currentSessionId}/attachments`)
-    const list = Array.isArray(listRes?.data) ? listRes.data : []
-    let q = ''
-    if (list.length > 1) {
+    const listRes = await request.get(`/chat/session/${sid}/attachments`)
+    const list = unwrapData<any[]>(listRes, [])
+    sessionAttachments.value = list
+    if (!list.length) {
+      ElMessage.warning('当前会话没有可打开的附件')
+      return
+    }
+
+    let indexes: number[] = [0]
+    if (index === 'all') {
+      indexes = list.map((it: any, i: number) => {
+        const n = Number(it?.index)
+        return Number.isFinite(n) ? n : i
+      })
+    } else if (typeof index === 'number') {
+      indexes = [index]
+    } else if (list.length > 1) {
       const options = list.map((it: any) => `${it.index}: ${it.fileName}`).join('\n')
-      const picked = window.prompt(`当前会话有多个附件，请输入要打开的序号：\n${options}`, '0')
+      const picked = window.prompt(
+        `当前会话有多个附件，请输入要打开的序号（例如 0），或输入 all 打开全部：\n${options}`,
+        '0'
+      )
       if (picked === null) return
-      const n = Number(picked)
-      if (Number.isNaN(n) || n < 0 || n >= list.length) {
-        ElMessage.warning('附件序号无效')
-        return
+      const input = picked.trim().toLowerCase()
+      if (input === 'all') {
+        indexes = list.map((it: any, i: number) => {
+          const n = Number(it?.index)
+          return Number.isFinite(n) ? n : i
+        })
+      } else {
+        const n = Number(input)
+        if (Number.isNaN(n) || n < 0 || n >= list.length) {
+          ElMessage.warning('附件序号无效')
+          return
+        }
+        indexes = [n]
       }
-      q = `?index=${n}`
     }
-    const resp = await fetch(`${apiBaseURL}/chat/session/${chat.currentSessionId}/attachment${q}`, {
-      method: 'GET',
-      headers: token ? { Authorization: `Bearer ${token}` } : {}
-    })
-    if (!resp.ok) {
-      const text = await resp.text()
-      throw new Error(text || `附件打开失败（HTTP ${resp.status}）`)
+
+    for (const idx of indexes) {
+      const q = Number.isFinite(idx) ? `?index=${idx}` : ''
+      const resp = await fetch(`${apiBaseURL}/chat/session/${sid}/attachment${q}`, {
+        method: 'GET',
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      })
+      if (!resp.ok) {
+        const text = await resp.text()
+        let message = text
+        try {
+          const parsed = JSON.parse(text || '{}')
+          message = String(parsed?.message || parsed?.msg || text || '')
+        } catch {
+          // keep raw text
+        }
+        throw new Error(message || `附件打开失败（HTTP ${resp.status}）`)
+      }
+      const blob = await resp.blob()
+      const url = URL.createObjectURL(blob)
+      const win = window.open(url, '_blank', 'noopener')
+      if (!win) {
+        const a = document.createElement('a')
+        a.href = url
+        a.target = '_blank'
+        a.rel = 'noopener'
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000)
     }
-    const blob = await resp.blob()
-    const url = URL.createObjectURL(blob)
-    const win = window.open(url, '_blank', 'noopener')
-    if (!win) {
-      const a = document.createElement('a')
-      a.href = url
-      a.target = '_blank'
-      a.rel = 'noopener'
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-    }
-    window.setTimeout(() => URL.revokeObjectURL(url), 60000)
   } catch (e: any) {
-    ElMessage.error(e?.message || '打开附件失败')
+    ElMessage.error(toUserErrorMessage(e, '打开附件失败'))
+  }
+}
+
+async function refreshSessionAttachments(sessionId?: number) {
+  const sid = sessionId ?? chat.currentSessionId
+  if (!sid) {
+    sessionAttachments.value = []
+    return
+  }
+  try {
+    const listRes = await request.get(`/chat/session/${sid}/attachments`)
+    sessionAttachments.value = unwrapData<any[]>(listRes, [])
+  } catch {
+    sessionAttachments.value = []
   }
 }
 
@@ -418,7 +496,7 @@ async function newSession() {
     await chat.createSession()
     sessionPageNum.value = 1
   } catch (e: any) {
-    ElMessage.error(e?.message || '创建会话失败')
+    ElMessage.error(toUserErrorMessage(e, '创建会话失败'))
   }
 }
 
@@ -428,6 +506,7 @@ function openSession(id: number) {
     documentModeFileName.value = ''
   }
   chat.fetchMessages(id)
+  refreshSessionAttachments(id)
 }
 
 async function removeSession(id: number) {
@@ -441,7 +520,7 @@ async function removeSession(id: number) {
     const maxPage = Math.max(1, Math.ceil(chat.sessionList.length / sessionPageSize))
     if (sessionPageNum.value > maxPage) sessionPageNum.value = maxPage
   } catch (e: any) {
-    ElMessage.error(e?.message || '删除会话失败')
+    ElMessage.error(toUserErrorMessage(e, '删除会话失败'))
   }
 }
 
@@ -632,6 +711,10 @@ html[data-theme='eye'] .chat-page {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  min-height: 44px;
+  border: 1px dashed var(--app-border);
+  border-radius: 10px;
+  padding: 8px;
 }
 
 .file-input {
@@ -641,6 +724,22 @@ html[data-theme='eye'] .chat-page {
 .file-text {
   color: var(--chat-muted);
   font-size: 12px;
+}
+
+.session-attachments {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.attachments-label {
+  font-size: 12px;
+  color: var(--chat-muted);
+}
+
+.attachment-tag {
+  cursor: pointer;
 }
 
 .msg-tools {

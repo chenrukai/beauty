@@ -1,6 +1,7 @@
 package com.beauty.knowledge.module.cms.service;
 
 import com.beauty.knowledge.module.cms.domain.entity.ProcessTask;
+import com.beauty.knowledge.module.cms.domain.vo.FileBinaryVO;
 import com.beauty.knowledge.module.cms.domain.vo.FileUploadVO;
 import com.beauty.knowledge.module.cms.domain.vo.ProcessTaskViewVO;
 import org.springframework.web.multipart.MultipartFile;
@@ -16,6 +17,8 @@ public interface FileService {
     List<ProcessTaskViewVO> recentTasks(Integer size);
 
     void retry(Long taskId);
+
+    FileBinaryVO openFile(Long fileId);
 
     void remove(Long fileId);
 }
