@@ -111,6 +111,24 @@ export const useChatStore = defineStore('chat', () => {
 
       const decoder = new TextDecoder('utf-8')
       let buffer = ''
+      let pendingToken = ''
+      let flushTimer: number | null = null
+
+      const flushPendingToken = () => {
+        if (!pendingToken) return
+        streamingContent.value += pendingToken
+        pendingToken = ''
+        const last = messages.value[messages.value.length - 1]
+        if (last) last.content = streamingContent.value
+      }
+
+      const scheduleFlush = () => {
+        if (flushTimer !== null) return
+        flushTimer = window.setTimeout(() => {
+          flushTimer = null
+          flushPendingToken()
+        }, 16)
+      }
 
       while (true) {
         const { done, value } = await reader.read()
@@ -139,12 +157,16 @@ export const useChatStore = defineStore('chat', () => {
           const eventType = event || payload?.type
 
           if (eventType === 'token') {
-            streamingContent.value += payload.content || ''
-            const last = messages.value[messages.value.length - 1]
-            if (last) last.content = streamingContent.value
+            pendingToken += payload.content || ''
+            scheduleFlush()
           }
 
           if (eventType === 'done') {
+            if (flushTimer !== null) {
+              window.clearTimeout(flushTimer)
+              flushTimer = null
+            }
+            flushPendingToken()
             currentSessionId.value = payload.sessionId || currentSessionId.value
             sources.value = payload.sources || []
             const last = messages.value[messages.value.length - 1]
@@ -159,6 +181,7 @@ export const useChatStore = defineStore('chat', () => {
           }
         }
       }
+      flushPendingToken()
     } catch (e: any) {
       const last = messages.value[messages.value.length - 1]
       if (last && !last.content) {

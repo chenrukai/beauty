@@ -69,7 +69,7 @@
             <div v-if="m.role === 'assistant'" class="msg-tools">
               <el-button text size="small" @click="copyAnswer(m.content)">复制回答</el-button>
             </div>
-            <StreamText :text="m.role === 'assistant' ? sanitizeAssistantText(m.content) : m.content" />
+            <StreamText :text="displayMessageText(m, idx)" />
             <div v-if="m.role === 'user' && hasUploadedAttachment(m.content)" class="msg-tools">
               <el-button text size="small" @click="openSessionAttachment">打开附件</el-button>
             </div>
@@ -108,19 +108,6 @@
           <el-button plain @click="triggerFilePick">上传文件（文档/图片/视频）</el-button>
           <span class="file-text">{{ selectedFileName }}</span>
           <el-button v-if="attachedFiles.length" text type="danger" @click="clearFile">移除</el-button>
-        </div>
-        <div class="session-attachments" v-if="sessionAttachments.length">
-          <span class="attachments-label">会话附件：</span>
-          <el-tag
-            v-for="item in sessionAttachments"
-            :key="`${item.index}-${item.fileName}`"
-            class="attachment-tag"
-            effect="plain"
-            @click="openSessionAttachment(item.index)"
-          >
-            {{ item.fileName }}
-          </el-tag>
-          <el-button text size="small" @click="openSessionAttachment('all')">全部打开</el-button>
         </div>
         <el-button type="primary" :loading="chat.isStreaming || summarizing" @click="ask">发送</el-button>
       </div>
@@ -491,6 +478,13 @@ function sanitizeAssistantText(text: string) {
     .trim()
 }
 
+function displayMessageText(m: { role: 'user' | 'assistant'; content: string }, idx: number) {
+  if (m.role !== 'assistant') return m.content
+  const isStreamingLastAssistant = chat.isStreaming && idx === chat.messages.length - 1
+  if (isStreamingLastAssistant) return m.content || ''
+  return sanitizeAssistantText(m.content || '')
+}
+
 async function newSession() {
   try {
     await chat.createSession()
@@ -724,22 +718,6 @@ html[data-theme='eye'] .chat-page {
 .file-text {
   color: var(--chat-muted);
   font-size: 12px;
-}
-
-.session-attachments {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.attachments-label {
-  font-size: 12px;
-  color: var(--chat-muted);
-}
-
-.attachment-tag {
-  cursor: pointer;
 }
 
 .msg-tools {
