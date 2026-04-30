@@ -449,12 +449,12 @@ VALUES ('烟酰胺', NULL, '维生素类', 'A', '帮助提亮与屏障修护'),
        ('棕榈酰五肽-4', NULL, '胜肽类', 'A', '细纹管理'),
        ('海藻糖复配物', NULL, '复配类', 'A', '锁水舒缓');
 
+INSERT INTO beauty_product (name, brand, product_type, skin_type, intro)
 WITH RECURSIVE seq AS (
     SELECT 1 AS n
     UNION ALL
     SELECT n + 1 FROM seq WHERE n < 120
 )
-INSERT INTO beauty_product (name, brand, product_type, skin_type, intro)
 SELECT CONCAT('专业护理产品-', LPAD(n, 3, '0')) AS name,
        ELT((n % 6) + 1, '澜肌实验室', '羽萃美研', '诺颜医研', '清苒皮肤学', '悦见美学', '臻研皮肤中心') AS brand,
        ELT((n % 8) + 1, '洁面', '爽肤水', '精华', '乳液', '面霜', '面膜', '头皮护理', '修护霜') AS product_type,
@@ -462,35 +462,35 @@ SELECT CONCAT('专业护理产品-', LPAD(n, 3, '0')) AS name,
        CONCAT('用于门店项目标准化护理，批次', DATE_FORMAT(NOW(), '%Y%m'), '，样本编号', LPAD(n, 3, '0')) AS intro
 FROM seq;
 
+INSERT IGNORE INTO rel_ingredient_effect (ingredient_id, effect_id, confidence, source)
 WITH RECURSIVE seq_rel AS (
     SELECT 1 AS n
     UNION ALL
     SELECT n + 1 FROM seq_rel WHERE n < 120
 )
-INSERT IGNORE INTO rel_ingredient_effect (ingredient_id, effect_id, confidence, source)
 SELECT ((n - 1) % 80) + 1 AS ingredient_id,
        ((n - 1) % 30) + 1 AS effect_id,
        ROUND(0.72 + (n % 20) * 0.01, 2) AS confidence,
        ELT((n % 2) + 1, 'dictionary', 'llm') AS source
 FROM seq_rel;
 
+INSERT IGNORE INTO rel_product_ingredient (product_id, ingredient_id, concentration)
 WITH RECURSIVE seq_pi AS (
     SELECT 1 AS n
     UNION ALL
     SELECT n + 1 FROM seq_pi WHERE n < 360
 )
-INSERT IGNORE INTO rel_product_ingredient (product_id, ingredient_id, concentration)
 SELECT ((n - 1) % 120) + 1 AS product_id,
        ((n * 3 - 1) % 80) + 1 AS ingredient_id,
        ELT((n % 5) + 1, '0.1%-0.3%', '0.3%-1%', '1%-3%', '3%-5%', '5%-10%') AS concentration
 FROM seq_pi;
 
+INSERT INTO kb_knowledge (title, summary, content, category_id, type, cover_url, status, view_count, author_id)
 WITH RECURSIVE seq_k AS (
     SELECT 1 AS n
     UNION ALL
     SELECT n + 1 FROM seq_k WHERE n < 300
 )
-INSERT INTO kb_knowledge (title, summary, content, category_id, type, cover_url, status, view_count, author_id)
 SELECT CONCAT(
                ELT((n % 5) + 1, '门店实操', '产品知识', '成分科普', '客诉处理', '项目SOP'),
                ' · ',
@@ -537,12 +537,12 @@ SELECT f.id,
        DATE_SUB(NOW(), INTERVAL (f.id % 30) DAY) + INTERVAL 5 MINUTE AS finished_at
 FROM kb_file f;
 
+INSERT INTO kb_chunk (knowledge_id, file_id, chunk_index, page_no, content, char_count, vector_status)
 WITH RECURSIVE seq_c AS (
     SELECT 1 AS n
     UNION ALL
     SELECT n + 1 FROM seq_c WHERE n < 6
 )
-INSERT INTO kb_chunk (knowledge_id, file_id, chunk_index, page_no, content, char_count, vector_status)
 SELECT f.knowledge_id,
        f.id AS file_id,
        seq_c.n AS chunk_index,
@@ -555,12 +555,12 @@ SELECT f.knowledge_id,
 FROM kb_file f
          CROSS JOIN seq_c;
 
+INSERT INTO chat_session (user_id, title, status, created_at, updated_at)
 WITH RECURSIVE seq_s AS (
     SELECT 1 AS n
     UNION ALL
     SELECT n + 1 FROM seq_s WHERE n < 80
 )
-INSERT INTO chat_session (user_id, title, status, created_at, updated_at)
 SELECT ELT((n % 3) + 1, 2, 4, 5) AS user_id,
        CONCAT('问答会话-', LPAD(n, 3, '0')) AS title,
        1 AS status,
@@ -568,12 +568,12 @@ SELECT ELT((n % 3) + 1, 2, 4, 5) AS user_id,
        DATE_SUB(NOW(), INTERVAL n DAY) + INTERVAL 30 MINUTE AS updated_at
 FROM seq_s;
 
+INSERT INTO chat_message (session_id, role, content, token_count, sources, created_at)
 WITH RECURSIVE seq_m AS (
     SELECT 1 AS n
     UNION ALL
     SELECT n + 1 FROM seq_m WHERE n < 5
 )
-INSERT INTO chat_message (session_id, role, content, token_count, sources, created_at)
 SELECT s.id,
        IF(seq_m.n % 2 = 1, 'user', 'assistant') AS role,
        IF(seq_m.n % 2 = 1,
@@ -589,12 +589,12 @@ SELECT s.id,
 FROM chat_session s
          CROSS JOIN seq_m;
 
+INSERT INTO entity_extract_pending (file_id, entity_type, entity_name, source_text, extract_method, status)
 WITH RECURSIVE seq_p AS (
     SELECT 1 AS n
     UNION ALL
     SELECT n + 1 FROM seq_p WHERE n < 240
 )
-INSERT INTO entity_extract_pending (file_id, entity_type, entity_name, source_text, extract_method, status)
 SELECT ((n - 1) % 300) + 1 AS file_id,
        ELT((n % 3) + 1, 'ingredient', 'effect', 'product') AS entity_type,
        CONCAT(ELT((n % 3) + 1, '候选成分-', '候选功效-', '候选产品-'), LPAD(n, 4, '0')) AS entity_name,

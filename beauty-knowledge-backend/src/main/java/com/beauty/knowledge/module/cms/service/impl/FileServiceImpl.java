@@ -35,6 +35,13 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.Charset;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;
 import java.util.Locale;
@@ -242,14 +249,17 @@ public class FileServiceImpl implements FileService {
         if (!StringUtils.hasText(file.getMinioPath())) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "file storage path is missing");
         }
-        byte[] bytes;
-        try {
-            bytes = minioStorageService.download(file.getMinioPath());
-        } catch (Exception ex) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "file binary not found");
-        }
         String fileName = StringUtils.hasText(file.getOriginalName()) ? file.getOriginalName() : ("file-" + file.getId());
         String contentType = detectContentTypeByName(fileName);
+        byte[] bytes = buildGeneratedKnowledgeBodyBytes(file, knowledge);
+        if (bytes == null) {
+            try {
+                bytes = minioStorageService.download(file.getMinioPath());
+            } catch (Exception ex) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "file binary not found");
+            }
+        }
+        bytes = normalizeTextBytesIfNeeded(fileName, contentType, bytes);
         return new FileBinaryVO(fileName, contentType, bytes);
     }
 
@@ -512,11 +522,21 @@ public class FileServiceImpl implements FileService {
         if (isMediaUploadType(uploadType)) {
             return true;
         }
+        // Text knowledge and document knowledge both accept common document/text uploads.
+        // This keeps the upload entry practical for CMS scenarios where the knowledge record
+        // represents a topic and the attachment may be txt/md/doc/docx/pdf/ppt/xlsx.
+        if (isTextKnowledgeType(knowledgeType) && isDocumentUploadType(uploadType)) {
+            return true;
+        }
         // Document knowledge accepts common document/text uploads to avoid hard blocking by legacy type values.
         if (isDocumentKnowledgeType(knowledgeType) && isDocumentUploadType(uploadType)) {
             return true;
         }
         return false;
+    }
+
+    private boolean isTextKnowledgeType(String type) {
+        return "TEXT_TXT".equals(type) || "TEXT_MD".equals(type);
     }
 
     private boolean isDocumentKnowledgeType(String type) {
@@ -568,6 +588,59 @@ public class FileServiceImpl implements FileService {
     private boolean isMediaUploadType(String type) {
         return "IMAGE".equals(type)
                 || "VIDEO".equals(type);
+    }
+
+    private byte[] normalizeTextBytesIfNeeded(String fileName, String contentType, byte[] bytes) {
+        if (bytes == null || bytes.length == 0 || !isTextLikeFile(fileName, contentType)) {
+            return bytes;
+        }
+        if (isValidUtf8(bytes)) {
+            return bytes;
+        }
+        return new String(bytes, Charset.forName("GB18030")).getBytes(StandardCharsets.UTF_8);
+    }
+
+    private byte[] buildGeneratedKnowledgeBodyBytes(KbFile file, KbKnowledge knowledge) {
+        if (file == null || knowledge == null) {
+            return null;
+        }
+        String fileName = StringUtils.hasText(file.getOriginalName()) ? file.getOriginalName() : "";
+        if (!"text_txt".equalsIgnoreCase(String.valueOf(file.getFileType()))) {
+            return null;
+        }
+        if (!fileName.endsWith("-正文.txt")) {
+            return null;
+        }
+        String text = StringUtils.hasText(knowledge.getContent())
+                ? knowledge.getContent()
+                : (StringUtils.hasText(knowledge.getSummary()) ? knowledge.getSummary() : "");
+        if (!StringUtils.hasText(text)) {
+            return null;
+        }
+        return text.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private boolean isTextLikeFile(String fileName, String contentType) {
+        String lowerName = StringUtils.hasText(fileName) ? fileName.toLowerCase(Locale.ROOT) : "";
+        String lowerType = StringUtils.hasText(contentType) ? contentType.toLowerCase(Locale.ROOT) : "";
+        return lowerType.startsWith("text/")
+                || lowerType.contains("json")
+                || lowerName.endsWith(".txt")
+                || lowerName.endsWith(".md")
+                || lowerName.endsWith(".csv")
+                || lowerName.endsWith(".json");
+    }
+
+    private boolean isValidUtf8(byte[] bytes) {
+        CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT);
+        try {
+            CharBuffer ignored = decoder.decode(ByteBuffer.wrap(bytes));
+            return true;
+        } catch (CharacterCodingException ex) {
+            return false;
+        }
     }
 
     private void validateFileExtension(String uploadType, String originalName) {

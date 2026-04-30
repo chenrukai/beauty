@@ -1,0 +1,142 @@
+[
+  {
+    "figure_no": "5-3",
+    "route": "/login",
+    "role": "guest",
+    "title": "系统登录页面截图",
+    "image_path": "D:/beauty/screenshots/thesis_pages/fig_5_3_login_page.png",
+    "chapter_anchor": "5.3 性能测试与兼容性测试",
+    "intro": "为验证系统登录入口在真实运行环境下可以正常展示，本文首先对系统登录页面进行截图取证。该页面提供管理员与普通用户两类入口，是后续所有业务流程的统一起点。",
+    "analysis": "截图显示登录页包含账号输入、密码输入、角色说明与注册切换区域，界面结构清晰，能够满足系统访问控制与用户进入系统的基本需求。"
+  },
+  {
+    "figure_no": "5-4",
+    "route": "/user/home",
+    "role": "user",
+    "title": "普通用户端首页页面截图",
+    "image_path": "D:/beauty/screenshots/thesis_pages/fig_5_4_user_home_page.png",
+    "chapter_anchor": "5.3 性能测试与兼容性测试",
+    "intro": "普通用户登录后可进入首页查看推荐知识与公告信息，因此本文选取用户端首页作为知识浏览功能的运行证据。",
+    "analysis": "截图展示了推荐知识卡片、公告区域与继续提问入口，说明系统已经能够将知识推荐、公告展示与用户跳转操作整合在同一页面中。"
+  },
+  {
+    "figure_no": "5-5",
+    "route": "/user/chat",
+    "role": "user",
+    "title": "普通用户端智能问答页面截图",
+    "image_path": "D:/beauty/screenshots/thesis_pages/fig_5_5_user_chat_page.png",
+    "chapter_anchor": "5.3 性能测试与兼容性测试",
+    "intro": "智能问答是本系统区别于传统内容展示平台的重要功能，因此在功能测试中需要给出真实运行页面截图作为支撑。",
+    "analysis": "截图展示了会话列表、消息区域、快捷提问与输入框等核心元素，表明系统已具备连续对话、问题输入与问答入口展示能力。"
+  },
+  {
+    "figure_no": "5-6",
+    "route": "/user/favorites",
+    "role": "user",
+    "title": "普通用户端收藏页面截图",
+    "image_path": "D:/beauty/screenshots/thesis_pages/fig_5_6_user_favorites_page.png",
+    "chapter_anchor": "5.3 性能测试与兼容性测试",
+    "intro": "收藏页面用于验证系统对用户个性化知识记录的支持情况，能够体现知识复用与持续访问能力。",
+    "analysis": "截图显示收藏列表、检索框与继续提问等操作控件，说明系统能够保存用户感兴趣的知识内容，并支持后续继续利用。"
+  },
+  {
+    "figure_no": "5-7",
+    "route": "/admin/overview",
+    "role": "admin",
+    "title": "管理员端运营总览页面截图",
+    "image_path": "D:/beauty/screenshots/thesis_pages/fig_5_7_admin_overview_page.png",
+    "chapter_anchor": "5.3 性能测试与兼容性测试",
+    "intro": "后台总览页面用于展示平台运行核心指标，是管理员掌握系统状态的主要入口，因此需要在测试章节中给出真实运行效果。",
+    "analysis": "截图中可见知识总数、待确认实体、任务状态与热门内容等信息，说明系统已能够对平台运行数据进行集中展示。"
+  },
+  {
+    "figure_no": "5-8",
+    "route": "/admin/report",
+    "role": "admin",
+    "title": "管理员端运营报表页面截图",
+    "image_path": "D:/beauty/screenshots/thesis_pages/fig_5_8_admin_report_page.png",
+    "chapter_anchor": "5.3 性能测试与兼容性测试",
+    "intro": "为验证统计分析模块的可用性，本文对后台运营报表页面进行截图，展示系统对用户行为与热点内容的分析结果。",
+    "analysis": "截图展示了活跃用户、行为次数、来源占比与热门关键词等内容，表明系统具备基础运营统计与报表分析能力。"
+  },
+  {
+    "figure_no": "5-9",
+    "route": "/admin/knowledge/list",
+    "role": "admin",
+    "title": "管理员端知识列表页面截图",
+    "image_path": "D:/beauty/screenshots/thesis_pages/fig_5_9_admin_knowledge_list_page.png",
+    "chapter_anchor": "5.3 性能测试与兼容性测试",
+    "intro": "知识列表页面是后台知识治理的核心页面之一，能够直接体现知识录入、检索与状态管理能力。",
+    "analysis": "截图中展示了知识条目列表、检索条件与状态信息，说明系统已实现面向后台管理场景的知识查询与维护功能。"
+  },
+  {
+    "figure_no": "5-10",
+    "route": "/admin/knowledge/upload",
+    "role": "admin",
+    "title": "管理员端文件上传页面截图",
+    "image_path": "D:/beauty/screenshots/thesis_pages/fig_5_10_admin_upload_page.png",
+    "chapter_anchor": "5.3 性能测试与兼容性测试",
+    "intro": "文件上传页面用于验证系统对原始资料接入与处理任务创建的支持情况，是知识加工链路的重要入口。",
+    "analysis": "截图显示了文件上传控件、知识信息表单与提交流程，说明系统已经能够承载资料接入与知识构建前置操作。"
+  },
+  {
+    "figure_no": "5-11",
+    "route": "/admin/category/tree",
+    "role": "admin",
+    "title": "管理员端分类树页面截图",
+    "image_path": "D:/beauty/screenshots/thesis_pages/fig_5_11_admin_category_page.png",
+    "chapter_anchor": "5.3 性能测试与兼容性测试",
+    "intro": "分类树页面用于展示知识分类体系与节点维护功能，是系统知识组织能力的直接体现。",
+    "analysis": "截图中可以看到分类树结构、节点详情与新增编辑操作区，说明系统已支持分层分类管理与节点维护。"
+  },
+  {
+    "figure_no": "5-12",
+    "route": "/admin/entity/confirm",
+    "role": "admin",
+    "title": "管理员端实体确认页面截图",
+    "image_path": "D:/beauty/screenshots/thesis_pages/fig_5_12_admin_entity_confirm_page.png",
+    "chapter_anchor": "5.3 性能测试与兼容性测试",
+    "intro": "实体确认页面用于验证系统对抽取候选实体与关系的审核支持情况，是知识治理中的关键人工确认环节。",
+    "analysis": "截图展示了待确认统计、候选记录列表与审核操作区，表明系统能够承载实体抽取结果的人工审核流程。"
+  },
+  {
+    "figure_no": "5-13",
+    "route": "/admin/entity/graph",
+    "role": "admin",
+    "title": "管理员端知识图谱页面截图",
+    "image_path": "D:/beauty/screenshots/thesis_pages/fig_5_13_admin_graph_page.png",
+    "chapter_anchor": "5.3 性能测试与兼容性测试",
+    "intro": "知识图谱页面用于展示实体与关系的可视化查询效果，是系统结构化知识组织能力的重要证据。",
+    "analysis": "截图显示图谱查询区域与节点关系展示结果，说明系统已经能够面向管理端提供图谱级别的结构化关系浏览能力。"
+  },
+  {
+    "figure_no": "5-14",
+    "route": "/admin/task/monitor",
+    "role": "admin",
+    "title": "管理员端任务监控页面截图",
+    "image_path": "D:/beauty/screenshots/thesis_pages/fig_5_14_admin_task_monitor_page.png",
+    "chapter_anchor": "5.3 性能测试与兼容性测试",
+    "intro": "任务监控页面用于验证异步文件处理与状态追踪能力，是后台流程可控性的关键体现。",
+    "analysis": "截图展示了任务列表、状态进度、时间信息与重试操作，表明系统能够对知识处理任务进行跟踪与管理。"
+  },
+  {
+    "figure_no": "5-15",
+    "route": "/admin/user/manage",
+    "role": "admin",
+    "title": "管理员端用户管理页面截图",
+    "image_path": "D:/beauty/screenshots/thesis_pages/fig_5_15_admin_user_manage_page.png",
+    "chapter_anchor": "5.3 性能测试与兼容性测试",
+    "intro": "用户管理页面用于展示后台对系统用户角色与状态的控制能力，是系统权限管理功能的重要组成部分。",
+    "analysis": "截图中显示了用户列表、角色信息与状态切换操作，说明系统已经具备基本的用户管理与权限控制能力。"
+  },
+  {
+    "figure_no": "5-16",
+    "route": "/admin/system/notice",
+    "role": "admin",
+    "title": "管理员端公告管理页面截图",
+    "image_path": "D:/beauty/screenshots/thesis_pages/fig_5_16_admin_notice_page.png",
+    "chapter_anchor": "5.3 性能测试与兼容性测试",
+    "intro": "公告管理页面用于验证系统对平台通知发布与维护的支持情况，体现管理端的运营维护能力。",
+    "analysis": "截图展示了公告列表、发布状态与操作按钮，表明系统能够完成公告信息的查看、发布与管理。"
+  }
+]

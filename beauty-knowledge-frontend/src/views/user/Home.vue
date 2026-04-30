@@ -1,13 +1,39 @@
 ﻿<template>
   <div class="home-page">
     <section class="hero">
-      <div>
-        <h2>今天想了解什么？</h2>
-        <p>从推荐知识开始，或直接去问答助手发起咨询。</p>
-      </div>
-      <div class="hero-actions">
-        <el-button type="primary" @click="goChat()">去提问</el-button>
-        <el-button @click="router.push('/user/favorites')">查看收藏</el-button>
+      <div class="hero-copy">
+        <div class="hero-top">
+          <div>
+            <h2>今天想了解什么？</h2>
+            <p>从推荐知识开始，或直接去问答助手发起咨询。</p>
+          </div>
+          <div class="hero-shortcuts">
+            <span class="shortcut-label">快捷入口</span>
+            <div class="hero-actions">
+              <el-button type="primary" @click="goChat()">去提问</el-button>
+              <el-button @click="router.push('/user/favorites')">查看收藏</el-button>
+            </div>
+          </div>
+        </div>
+        <div class="hero-toolbar">
+          <div class="hero-search">
+            <div class="hero-search-shell">
+              <span class="search-label">知识检索</span>
+              <el-input
+                v-model.trim="searchKeyword"
+                clearable
+                placeholder="按知识标题搜索，例如：门店接待、夜间建立耐受"
+                size="large"
+                @keyup.enter="runSearch(1)"
+                @clear="resetSearch"
+              />
+            </div>
+            <div class="hero-search-actions">
+              <el-button type="primary" size="large" :loading="loadingSearch" @click="runSearch(1)">搜索</el-button>
+              <el-button v-if="isSearchMode" size="large" plain @click="resetSearch">返回推荐</el-button>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -26,14 +52,19 @@
     <el-card shadow="never" class="recommend-card">
       <template #header>
         <div class="head">
-          <strong>知识推荐</strong>
-          <el-button text @click="fetchRecommend(1)">刷新</el-button>
+          <div class="head-copy">
+            <strong>{{ isSearchMode ? '搜索结果' : '知识推荐' }}</strong>
+            <span class="muted">
+              {{ isSearchMode ? `关键词：${activeKeyword}` : '为你展示当前热门知识内容' }}
+            </span>
+          </div>
+          <el-button text @click="refreshCurrentList">{{ isSearchMode ? '重新搜索' : '刷新' }}</el-button>
         </div>
       </template>
 
-      <div v-if="loadingRecommend" class="muted">加载中...</div>
-      <div v-else-if="recommendList.length" class="recommend-grid">
-        <div v-for="item in recommendList" :key="item.id" class="recommend-item">
+      <div v-if="currentLoading" class="muted">加载中...</div>
+      <div v-else-if="currentList.length" class="recommend-grid">
+        <div v-for="item in currentList" :key="item.id" class="recommend-item">
           <h4>{{ item.title }}</h4>
           <div class="recommend-meta">浏览 {{ item.viewCount || 0 }}</div>
           <div class="recommend-content">{{ item.content }}</div>
@@ -51,16 +82,16 @@
           </div>
         </div>
       </div>
-      <div v-else class="muted">暂无知识数据</div>
+      <div v-else class="muted">{{ isSearchMode ? '没有找到相关知识，换个关键词试试。' : '暂无知识数据' }}</div>
 
-      <div class="pager" v-if="recommendTotal > recommendPageSize">
+      <div class="pager" v-if="currentTotal > recommendPageSize">
         <el-pagination
           background
           layout="total, prev, pager, next"
-          :total="recommendTotal"
+          :total="currentTotal"
           :page-size="recommendPageSize"
-          v-model:current-page="recommendPageNum"
-          @current-change="fetchRecommend"
+          :current-page="currentPageNum"
+          @current-change="handlePageChange"
         />
       </div>
     </el-card>
@@ -119,7 +150,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import request from '../../api/request'
@@ -139,16 +170,27 @@ const auth = useAuthStore()
 const configuredBaseURL = import.meta.env.VITE_API_BASE_URL?.trim()
 const apiBaseURL = configuredBaseURL || 'http://127.0.0.1:8080/api'
 const loadingRecommend = ref(false)
+const loadingSearch = ref(false)
 const recommendList = ref<RecommendItem[]>([])
+const searchList = ref<RecommendItem[]>([])
 const recommendPageNum = ref(1)
+const searchPageNum = ref(1)
 const recommendPageSize = 6
 const recommendTotal = ref(0)
+const searchTotal = ref(0)
+const searchKeyword = ref('')
+const activeKeyword = ref('')
 const noticeList = ref<any[]>([])
 const knowledgeDialogVisible = ref(false)
 const knowledgeDetail = ref<any>(null)
 const knowledgeFiles = ref<any[]>([])
 const favoriteMap = ref<Record<number, boolean>>({})
 const openingFileIds = ref<Set<number>>(new Set())
+const isSearchMode = computed(() => Boolean(activeKeyword.value))
+const currentLoading = computed(() => (isSearchMode.value ? loadingSearch.value : loadingRecommend.value))
+const currentList = computed(() => (isSearchMode.value ? searchList.value : recommendList.value))
+const currentTotal = computed(() => (isSearchMode.value ? searchTotal.value : recommendTotal.value))
+const currentPageNum = computed(() => (isSearchMode.value ? searchPageNum.value : recommendPageNum.value))
 
 onMounted(async () => {
   await Promise.allSettled([fetchRecommend(1), fetchNotices()])
@@ -196,6 +238,69 @@ async function fetchRecommend(page = recommendPageNum.value) {
   }
 }
 
+async function runSearch(page = searchPageNum.value) {
+  const keyword = searchKeyword.value.trim()
+  if (!keyword) {
+    resetSearch()
+    return
+  }
+
+  searchPageNum.value = Number(page || 1)
+  loadingSearch.value = true
+  activeKeyword.value = keyword
+  try {
+    const res = await request.get('/knowledge/page', {
+      params: {
+        keyword,
+        pageNum: searchPageNum.value,
+        pageSize: recommendPageSize,
+        status: 1,
+        sortBy: 'hot'
+      }
+    })
+    const pageData = unwrapData<any>(res, {})
+    searchList.value = (pageData?.records || []).map((item: any) => ({
+      id: item.id,
+      title: String(item.title || `知识 #${item.id}`),
+      content: toTeaser(item.content || item.summary || '', 15),
+      viewCount: Number(item.viewCount || 0)
+    }))
+    searchTotal.value = Number(pageData?.total || 0)
+    await syncFavoriteState(searchList.value.map((item) => item.id))
+    await recordAction('search', { keyword, targetType: 'knowledge', source: 'home' })
+  } catch (e: any) {
+    searchList.value = []
+    searchTotal.value = 0
+    ElMessage.error(e?.message || '搜索失败')
+  } finally {
+    loadingSearch.value = false
+  }
+}
+
+function resetSearch() {
+  searchKeyword.value = ''
+  activeKeyword.value = ''
+  searchPageNum.value = 1
+  searchList.value = []
+  searchTotal.value = 0
+}
+
+function refreshCurrentList() {
+  if (isSearchMode.value) {
+    runSearch(searchPageNum.value)
+    return
+  }
+  fetchRecommend(1)
+}
+
+function handlePageChange(page: number) {
+  if (isSearchMode.value) {
+    runSearch(page)
+    return
+  }
+  fetchRecommend(page)
+}
+
 function toTeaser(text: string, limit = 15) {
   const chars = Array.from(String(text || ''))
   if (chars.length <= limit) return chars.join('')
@@ -203,6 +308,7 @@ function toTeaser(text: string, limit = 15) {
 }
 
 async function openKnowledge(knowledgeId: number) {
+  const source = isSearchMode.value ? 'search' : 'recommend'
   try {
     const res = await request.get(`/knowledge/${knowledgeId}`)
     const data = unwrapData<any>(res, {})
@@ -210,9 +316,9 @@ async function openKnowledge(knowledgeId: number) {
     knowledgeFiles.value = Array.isArray(data.files) ? data.files : []
     await syncFavoriteState([knowledgeId])
     knowledgeDialogVisible.value = true
-    await recordAction('click', { targetType: 'knowledge', targetId: knowledgeId, source: 'recommend' })
-    await recordAction('browse', { targetType: 'knowledge', targetId: knowledgeId, source: 'recommend' })
-    await fetchRecommend(recommendPageNum.value)
+    await recordAction('click', { targetType: 'knowledge', targetId: knowledgeId, source })
+    await recordAction('browse', { targetType: 'knowledge', targetId: knowledgeId, source })
+    refreshCurrentList()
   } catch (e: any) {
     ElMessage.error(e?.message || '加载知识详情失败')
   }
@@ -321,6 +427,24 @@ async function recordAction(actionType: string, payload: any = {}) {
   box-shadow: var(--app-shadow-sm);
 }
 
+.hero-copy {
+  flex: 1;
+}
+
+.hero-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.hero-toolbar {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
 .hero h2 {
   margin: 0 0 6px;
   font-size: 28px;
@@ -331,19 +455,139 @@ async function recordAction(actionType: string, payload: any = {}) {
   color: rgba(255, 255, 255, 0.88);
 }
 
+.hero-search {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.hero-search-shell {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px 10px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(8px);
+}
+
+.search-label {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.76);
+}
+
+.hero-search-shell :deep(.el-input) {
+  flex: 1;
+}
+
+.hero-search-shell :deep(.el-input__wrapper) {
+  min-height: 48px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 0 0 1px rgba(16, 124, 112, 0.14);
+  padding: 0 16px;
+}
+
+.hero-search-shell :deep(.el-input__wrapper.is-focus) {
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.34),
+    0 0 0 4px rgba(15, 118, 110, 0.22);
+}
+
+.hero-search-shell :deep(.el-input__inner) {
+  font-size: 15px;
+  color: #123b35;
+}
+
+.hero-search-shell :deep(.el-input__inner::placeholder) {
+  color: #7b8b87;
+}
+
+.hero-search-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hero-search-actions :deep(.el-button) {
+  min-width: 112px;
+  min-height: 48px;
+  border-radius: 14px;
+  font-weight: 700;
+}
+
+.hero-search-actions :deep(.el-button--primary) {
+  border-color: rgba(9, 89, 82, 0.75);
+  background: linear-gradient(135deg, #0b6e64 0%, #095d56 100%);
+}
+
+.hero-search-actions :deep(.el-button.is-plain) {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: rgba(255, 255, 255, 0.68);
+  color: #0e5f58;
+}
+
+.hero-shortcuts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: fit-content;
+  min-width: 244px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(6, 74, 69, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.shortcut-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.72);
+}
+
 .hero-actions {
   display: flex;
   gap: 10px;
 }
 
 .hero-actions :deep(.el-button) {
-  border-radius: 10px;
+  flex: 1;
+  min-height: 42px;
+  border-radius: 14px;
+  font-weight: 700;
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+.hero-actions :deep(.el-button--primary) {
+  border-color: rgba(123, 198, 255, 0.22);
+  background: linear-gradient(135deg, #6eb6ff 0%, #4f8dff 100%);
+  box-shadow: 0 10px 22px rgba(47, 115, 255, 0.2);
+}
+
+.hero-actions :deep(.el-button:not(.el-button--primary)) {
+  background: rgba(255, 255, 255, 0.98);
+  color: #174842;
 }
 
 .head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+}
+
+.head-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .notice {
@@ -451,6 +695,51 @@ async function recordAction(actionType: string, payload: any = {}) {
   .hero {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .hero-top {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hero-toolbar {
+    align-items: stretch;
+  }
+
+  .hero-search {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hero-search-shell {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .hero-search-actions {
+    width: 100%;
+  }
+
+  .hero-search-actions :deep(.el-button) {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .hero-actions {
+    width: 100%;
+  }
+
+  .hero-actions :deep(.el-button) {
+    flex: 1;
+  }
+
+  .hero-shortcuts {
+    width: 100%;
+    min-width: 0;
   }
 
   .recommend-grid {
